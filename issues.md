@@ -21,8 +21,8 @@
 | ISSUE-010 | Write README and MCP client configuration docs | P2 | 0.5d | ISSUE-007 | done |
 | ISSUE-011 | Create server.json and register on MCP Registry and PulseMCP | P2 | 0.5d | ISSUE-008 | backlog |
 | ISSUE-012 | ElevenLabs-style audio output modes (files/resources/both) | P1 | 0.5d | ISSUE-005 | done |
-| ISSUE-013 | Update PRD/docs for v0.2 (voice discovery + cloning) | P0 | 0.5d | none | backlog |
-| ISSUE-014 | Extend SupertoneClient with voice discovery methods | P0 | 0.5d | ISSUE-013 | backlog |
+| ISSUE-013 | Update PRD/docs for v0.2 (voice discovery + cloning) | P0 | 0.5d | none | done |
+| ISSUE-014 | Extend SupertoneClient with voice discovery methods | P0 | 0.5d | ISSUE-013 | done |
 | ISSUE-015 | Replace `list_voices` with `search_voice` tool (breaking) | P1 | 0.5d | ISSUE-014 | backlog |
 | ISSUE-016 | Add `get_voice` + `get_credit_balance` tools | P1 | 0.5d | ISSUE-014 | backlog |
 | ISSUE-017 | Add `preview_voice` tool (returns sample URLs) | P1 | 0.5d | ISSUE-014, ISSUE-016 | backlog |
@@ -627,11 +627,11 @@ Revert changes to constants.py, tools.py, server.py, test_tools.py, test_server.
 - PRD-Ref: PRD §3, §6, §11
 - Priority: P0
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
+- Branch: issue/ISSUE-013-v02-docs
 - GH-Issue:
-- PR:
+- PR: #10
 - Depends-On: none
 
 #### Goal
@@ -668,11 +668,11 @@ Revert PRD.md, docs/*.md, STATUS.md changes.
 - PRD-Ref: FR-012, FR-013, FR-014
 - Priority: P0
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Branch: issue/ISSUE-014-client-voice-discovery
+- GH-Issue: #11
+- PR: #12
 - Depends-On: ISSUE-013
 
 #### Goal

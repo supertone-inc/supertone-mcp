@@ -1,6 +1,6 @@
 # Project Status: Supertone TTS MCP Server
 
-> Last updated: 2026-05-26
+> Last updated: 2026-05-27
 
 ## Current Milestone
 
@@ -11,9 +11,9 @@
 | Metric | Count |
 |--------|-------|
 | Total v0.2 docs/impl issues | 8 (ISSUE-013–020) |
-| Done | 1 (ISSUE-013: v0.2 docs) |
+| Done | 2 (ISSUE-013, ISSUE-014) |
 | In progress | 0 |
-| Remaining | 7 (ISSUE-014–020) |
+| Remaining | 6 (ISSUE-015–020) |
 
 > v0.1 (ISSUE-001–010, 012) shipped. ISSUE-011 (MCP Registry + PulseMCP) is parked pending manual PyPI publish + registry form submission.
 
@@ -30,6 +30,13 @@
 | #7 | feat(server): implement MCP server entry point | ISSUE-007 |
 | #8 | feat(packaging): complete PyPI metadata and README | ISSUE-008, ISSUE-010 |
 | #9 | feat(stream): implement streaming TTS with Supertone SDK | ISSUE-012 |
+
+### v0.2 Merged PRs
+
+| PR | Title | Issues |
+|----|-------|--------|
+| #10 | docs(claude): sync PRD and ux_spec for v0.2 voice tools | ISSUE-013 |
+| #12 | feat(client): add search_voices, get_voice, get_credit_balance | ISSUE-014 |
 
 ## Next Steps (v0.2)
 
@@ -56,4 +63,4 @@
 | `docs/architecture.md` | v0.2 (SDK-backed client; expanded tool surface in `tools.py`) |
 | `docs/data_model.md` | v0.1 — to be revisited if cloning needs new types |
 | `docs/test_plan.md` | v0.1 — to extend as ISSUE-014–020 land |
-| `issues.md` | ISSUE-013 closing; ISSUE-014–020 queued |
+| `issues.md` | ISSUE-014 shipped (PR #12 → 22c5bd4); ISSUE-015–020 queued |
