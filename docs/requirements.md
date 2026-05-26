@@ -1,8 +1,11 @@
 # Requirements: Supertone TTS MCP Server
 
-> Generated: 2026-03-13
-> Source: PRD v0.1 (Draft, 2026-03-13)
+> Generated: 2026-03-13 (v0.1) / 2026-05-26 (v0.2 extension)
+> Source: PRD v0.2 (Draft, 2026-05-26)
 > Analyst: requirements-analyst agent
+
+> v0.2 adds: voice discovery (search/get/credit/preview), duration prediction, and voice cloning CRUD.
+> Breaking change in v0.2: `list_voices` is replaced by `search_voice` (no deprecated alias).
 
 ---
 
@@ -91,7 +94,50 @@
 - [x] Given `language="ko"` is passed to `list_voices`, then only voices supporting Korean are returned.
 - [x] Given an unsupported language filter, then an error is returned listing valid language codes.
 
-> Note: This is partially covered by US-003 AC for `list_voices`. Separated here for traceability.
+> Note: This is partially covered by US-003 AC for `list_voices` (v0.1) / `search_voice` (v0.2).
+
+### Must (added in v0.2)
+
+#### US-008: Search and Preview Voices
+**As an** MCP user, **I want** to search voices by name, description, language, gender, age, use_case, style, or model and preview them via sample audio URLs, **so that** I can confidently pick a voice for TTS.
+
+**Acceptance Criteria:**
+- [ ] Given `search_voice` is called with no filters, when the tool completes, then the full voice list is returned (equivalent to former `list_voices`).
+- [ ] Given `search_voice(language="ko", gender="female")` is called, when the tool completes, then only Korean female voices are returned and the response begins with a `Filters applied: ...` line.
+- [ ] Given `search_voice` with filters returns zero results, then the tool returns `No voices found matching the filters.` (not an error).
+- [ ] Given `get_voice(voice_id="...")` is called, then the response includes name, description, age, gender, use_cases, languages, styles, models, sample count, and thumbnail_image_url.
+- [ ] Given `preview_voice(voice_id="...")` is called, then a numbered list of sample URLs (with language/style/model tags) is returned. v0.2 does NOT autoplay audio locally.
+- [ ] Given `preview_voice` for a voice with zero samples, then `This voice has no preview samples.` is returned.
+
+#### US-009: Check Credit Balance Before TTS
+**As an** MCP user, **I want** to call `get_credit_balance`, **so that** I can confirm I have enough credits before running a long TTS synthesis.
+
+**Acceptance Criteria:**
+- [ ] Given `get_credit_balance()` is called with a valid API key, when the tool completes, then `Credit balance: {N} chars remaining.` is returned.
+- [ ] Given the API returns plan name or expiry date, then these are appended on subsequent lines (`Plan: {name}`, `Expires: {date}`).
+- [ ] Given the API key is invalid, then the standard auth error is returned (FR-007 mapping).
+
+#### US-010: Predict Duration
+**As an** MCP user, **I want** to call `predict_duration(text, ...)`, **so that** I know the expected output length without spending credits on full synthesis.
+
+**Acceptance Criteria:**
+- [ ] Given valid input, when `predict_duration` completes, then `Predicted duration: {N}.{NN}s (credit usage is proportional to duration).` is returned.
+- [ ] Given text > 300 characters, then the same text-too-long error as `text_to_speech` is returned (FR-005).
+- [ ] Given the same `text_to_speech` parameters (voice_id, language, model, output_format, speed, pitch_shift, style), then `predict_duration` accepts them with identical validation.
+- [ ] Given the tool runs, then NO audio file is produced (it's a prediction-only call).
+
+#### US-011: Clone and Manage Custom Voices
+**As an** MCP user, **I want** to clone my voice from a single WAV/MP3 file (≤3MB), then search/edit/delete the resulting custom voices, **so that** I can produce TTS in my own voice.
+
+**Acceptance Criteria:**
+- [ ] Given `clone_voice(name="MyVoice", audio_path="~/sample.wav")` is called with a valid file, then `Custom voice created. voice_id: {id}. Use this voice_id in text_to_speech.` is returned.
+- [ ] Given `audio_path` does not exist, then `Audio file not found: {path}.` is returned (no API call made).
+- [ ] Given the file has an unsupported extension (e.g., `.flac`, `.ogg`), then `Unsupported audio format: "{ext}". Supported: wav, mp3.` is returned.
+- [ ] Given the file is larger than 3MB, then `Audio file exceeds the 3MB limit (received: {N} bytes).` is returned (no API call made).
+- [ ] Given `name` is empty, then `Voice name must not be empty.` is returned.
+- [ ] Given `search_custom_voice()` is called, then a numbered list of custom voices is returned (or `No custom voices found.`).
+- [ ] Given `edit_custom_voice(voice_id="x")` is called with neither `name` nor `description`, then `At least one of name or description must be provided.` is returned.
+- [ ] Given `delete_custom_voice(voice_id="x")` is called, then `Custom voice deleted. voice_id: x.` is returned. No confirm gate is enforced (v0.2 product decision); the tool description warns the action is irreversible.
 
 ---
 
@@ -111,16 +157,105 @@
   - The file is named with a timestamp and unique identifier (e.g., `2026-03-13_abc123.mp3`).
 - **Dependencies:** FR-003 (authentication).
 
-#### FR-002: `list_voices` MCP Tool
-- **Description:** Expose an MCP tool named `list_voices` that queries the Supertone API (`GET /v1/voices`) and returns voice metadata.
+#### FR-002: `list_voices` MCP Tool — **REMOVED in v0.2** (replaced by FR-012 `search_voice`)
+- **Description (historical, v0.1):** Exposed an MCP tool named `list_voices` that queried the Supertone API and returned voice metadata.
+- **Status:** Removed in v0.2 as a breaking change. Callers must migrate to `search_voice` (FR-012), which accepts a superset of filter parameters.
+
+### Feature Area: Voice Discovery (v0.2)
+
+#### FR-012: `search_voice` MCP Tool
+- **Description:** Expose an MCP tool named `search_voice` that calls `voices.search_voices_async` (Supertone SDK) with optional filters. Replaces v0.1's `list_voices` (breaking change, no alias).
 - **Priority:** Must
-- **Parameters:** `language` (optional filter).
+- **Parameters (all optional, server-side filtering):** `name`, `description`, `language`, `gender`, `age`, `use_case`, `style`, `model`.
 - **Acceptance Criteria:**
-  - The tool is registered in the MCP server and discoverable by MCP clients.
-  - Returns a structured list where each entry has: `voice_id`, `name`, `supported_languages`, `supported_styles`.
-  - When `language` filter is provided, only matching voices are returned.
-  - When no voices exist or API returns empty, the tool returns an empty list (not an error).
-- **Dependencies:** FR-003 (authentication).
+  - The tool is registered and discoverable.
+  - When called with no filters, returns the full voice list as a numbered plain-text list.
+  - When called with any filter, prefixes output with a `Filters applied: key=value, ...` line.
+  - When zero results, returns `No voices found matching the filters.` (success, not error).
+  - Each entry includes: voice_id, name, languages, styles.
+- **Dependencies:** FR-003.
+
+#### FR-013: `get_voice` MCP Tool
+- **Description:** Expose an MCP tool named `get_voice` that calls `voices.get_voice_async` and returns full voice detail.
+- **Priority:** Must
+- **Parameters:** `voice_id` (required).
+- **Acceptance Criteria:**
+  - Returns a plain-text block including voice_id, name, description, age, gender, use_cases, languages, styles, models, sample count, thumbnail_image_url.
+  - Includes a closing line `Use preview_voice to fetch sample URLs.`.
+  - Returns `voice_id must not be empty.` if input is empty.
+- **Dependencies:** FR-003.
+
+#### FR-014: `get_credit_balance` MCP Tool
+- **Description:** Expose an MCP tool named `get_credit_balance` that calls `usage.get_credit_balance_async`.
+- **Priority:** Must
+- **Parameters:** None.
+- **Acceptance Criteria:**
+  - Returns `Credit balance: {N} chars remaining.`.
+  - If the API response includes plan name or expiry, append `Plan: {name}` / `Expires: {date}` on additional lines.
+  - Maps API errors per FR-007.
+- **Dependencies:** FR-003.
+
+#### FR-015: `preview_voice` MCP Tool
+- **Description:** Expose an MCP tool named `preview_voice` that returns sample audio URLs filtered from `get_voice` data (no separate API call needed if SDK already includes samples).
+- **Priority:** Must
+- **Parameters:** `voice_id` (required), `language`, `style`, `model` (all optional filters).
+- **Acceptance Criteria:**
+  - Returns a numbered list. Each line format: `1. [language=ko, style=happy, model=sona_speech_1] https://.../sample.wav`.
+  - If the voice has zero samples, returns `This voice has no preview samples.`.
+  - If filters match no samples, returns `No matching samples for the given filters.`.
+  - v0.2 does NOT play audio locally. Audio playback is deferred to v0.3 (`play_audio_url` tool).
+- **Dependencies:** FR-003.
+
+### Feature Area: Duration Prediction (v0.2)
+
+#### FR-016: `predict_duration` MCP Tool
+- **Description:** Expose an MCP tool that calls `text_to_speech.predict_duration_async` to compute expected audio length without performing synthesis.
+- **Priority:** Must
+- **Parameters:** Same as `text_to_speech` minus actual synthesis (text required; voice_id, language, model, output_format, speed, pitch_shift, style optional).
+- **Acceptance Criteria:**
+  - Returns `Predicted duration: {N}.{NN}s (credit usage is proportional to duration).`.
+  - Reuses FR-005 and FR-006 input validation rules (text length, parameter ranges).
+  - Does NOT produce any audio file.
+- **Dependencies:** FR-001 (shares validation), FR-003.
+
+### Feature Area: Voice Cloning CRUD (v0.2)
+
+#### FR-017: `clone_voice` MCP Tool
+- **Description:** Create a cloned custom voice from a single local audio file via `custom_voices.create_cloned_voice_async`.
+- **Priority:** Must
+- **Parameters:** `name` (required, non-empty), `audio_path` (required, local FS path with `~` expansion), `description` (optional).
+- **Acceptance Criteria:**
+  - File extension MUST be `.wav` or `.mp3`. Invalid → `Unsupported audio format: "{ext}". Supported: wav, mp3.`.
+  - File size MUST be ≤ 3MB. Larger → `Audio file exceeds the 3MB limit (received: {N} bytes).`.
+  - File MUST exist. Missing → `Audio file not found: {path}.`.
+  - `name` MUST be non-empty. Empty → `Voice name must not be empty.`.
+  - All validations happen BEFORE any API call (fail-fast).
+  - On success returns `Custom voice created. voice_id: {id}. Use this voice_id in text_to_speech.`.
+  - SDK payload: `Files` object with `file_name`, `content` (bytes), `content_type`.
+- **Dependencies:** FR-003.
+
+#### FR-018: `search_custom_voice` MCP Tool
+- **Description:** Search the user's own custom (cloned) voices via `custom_voices.search_custom_voices_async`.
+- **Priority:** Must
+- **Parameters:** `name`, `description` (both optional partial matches).
+- **Acceptance Criteria:**
+  - Returns a numbered list with voice_id, name, description, and created_at if available.
+  - When zero results, returns `No custom voices found.`.
+  - Pagination is handled internally using SDK defaults; no `page`/`limit` parameters exposed in v0.2.
+- **Dependencies:** FR-003.
+
+#### FR-019: `edit_custom_voice` and `delete_custom_voice` MCP Tools
+- **Description:** Partial update and deletion of cloned voices via `custom_voices.edit_custom_voice_async` and `custom_voices.delete_custom_voice_async`.
+- **Priority:** Must
+- **Parameters (edit):** `voice_id` (required), `name` (optional), `description` (optional). At least one of `name`/`description` MUST be provided.
+- **Parameters (delete):** `voice_id` (required).
+- **Acceptance Criteria (edit):**
+  - With both `name` and `description` omitted → `At least one of name or description must be provided.` (no API call).
+  - On success returns `Custom voice updated. voice_id: {id}.`.
+- **Acceptance Criteria (delete):**
+  - On success returns `Custom voice deleted. voice_id: {id}.`.
+  - NO confirm gate is enforced in v0.2. The tool description text MUST warn the user this is irreversible (UX spec).
+- **Dependencies:** FR-003.
 
 ### Feature Area: Configuration and Authentication
 
@@ -275,21 +410,24 @@
 
 ## Out of Scope
 
-The following are explicitly excluded from this version (v1) per PRD Section 3:
+The following are explicitly excluded from v0.2 per PRD Section 3:
 
 1. **STT (Speech-to-Text)** -- incompatible with MCP's tool-calling architecture.
 2. **Voice conversation interface** (STT -> LLM -> TTS pipeline) -- separate project.
-3. **Voice cloning** (`clone_voice`) -- deferred to v2.
-4. **Batch conversion** (`batch_tts`) -- deferred to v2.
-5. **Duration prediction** (`predict_duration`) -- deferred to v2.
-6. **Credit balance check** (`check_credits`) -- deferred to v2.
-7. **Streaming TTS** -- deferred to v2.
-8. **Automatic text splitting** for 300+ characters -- deferred to v2.
-9. **Web UI or standalone client application**.
-10. **Support for TTS engines other than Supertone**.
-11. **Audio playback within the MCP response** -- MCP does not support binary streaming; file path is returned instead.
-12. **Rate limiting or request queuing on the MCP server side** -- PRD does not mention this; users are subject to Supertone API rate limits directly.
-13. **User authentication / multi-tenancy on the MCP server** -- single-user, single API key model.
+3. **Batch conversion** (`batch_tts`) -- deferred to v0.3+.
+4. **Multi-file voice cloning** (multi-sample upload) -- v0.2 supports single file only; deferred to v0.3+.
+5. **Local audio autoplay** for `preview_voice` -- v0.2 returns URLs only; autoplay is the responsibility of the future v0.3 `play_audio_url` tool.
+6. **`list_models` tool** (TTS model catalog) -- deferred to v0.3+.
+7. **Single-fetch `get_custom_voice` tool** -- deferred; `search_custom_voice` results are sufficient in v0.2.
+8. **Delete confirmation gate** for `delete_custom_voice` -- v0.2 relies on the tool description's irreversibility warning; explicit confirm prompts deferred.
+9. **Automatic text splitting** for 300+ characters -- deferred to v0.3+.
+10. **Web UI or standalone client application**.
+11. **Support for TTS engines other than Supertone**.
+12. **Audio playback within the MCP response** -- MCP does not stream binary; file paths or URLs are returned.
+13. **Rate limiting or request queuing on the MCP server side** -- users are subject to Supertone API rate limits directly.
+14. **User authentication / multi-tenancy on the MCP server** -- single-user, single API key model.
+
+> Note: v0.1 listed voice cloning, duration prediction, and credit balance check as out of scope. These have been promoted to v0.2 (FR-014, FR-016, FR-017–019).
 
 ---
 
@@ -340,10 +478,14 @@ The following are explicitly excluded from this version (v1) per PRD Section 3:
 | User Story | Functional Requirements | NFRs |
 |-----------|------------------------|------|
 | US-001 | FR-001, FR-003, FR-004, FR-005, FR-007, FR-008 | NFR-003, NFR-004, NFR-008 |
-| US-002 | FR-002, FR-003, FR-007 | NFR-004 |
-| US-003 | FR-001, FR-002, FR-006 | NFR-004 |
+| US-002 (v0.1, superseded) | FR-002 (removed) → migrated to US-008/FR-012 | NFR-004 |
+| US-003 | FR-001, FR-012, FR-006 | NFR-004 |
 | US-004 | FR-001, FR-006 | NFR-004 |
 | US-005 | FR-001, FR-006 | NFR-004 |
 | US-006 | FR-001, FR-006 | NFR-004 |
-| US-007 | FR-002 | NFR-004 |
+| US-007 | FR-012 | NFR-004 |
+| US-008 (v0.2) | FR-012, FR-013, FR-015, FR-003, FR-007 | NFR-004 |
+| US-009 (v0.2) | FR-014, FR-003, FR-007 | NFR-004 |
+| US-010 (v0.2) | FR-016, FR-005, FR-006, FR-003, FR-007 | NFR-004 |
+| US-011 (v0.2) | FR-017, FR-018, FR-019, FR-003, FR-007 | NFR-004, NFR-007 |
 | -- | FR-009, FR-010, FR-011 | NFR-001, NFR-002, NFR-005, NFR-006, NFR-007 |

@@ -1,5 +1,13 @@
 # Architecture
 
+> **v0.1 → v0.2 delta**: The single `supertone_client.py` wrapper is now backed by the official **Supertone Python SDK** (`supertone` package). The SDK exposes per-feature modules; v0.2 uses:
+> - `text_to_speech` — synthesis + `predict_duration_async`
+> - `voices` — `search_voices_async`, `get_voice_async` (samples included in `GetCharacterByIDResponse.samples`)
+> - `usage` — `get_credit_balance_async`
+> - `custom_voices` — `create_cloned_voice_async`, `search_custom_voices_async`, `edit_custom_voice_async`, `delete_custom_voice_async`
+>
+> No new top-level Python module is required. The existing `supertone_client.py` adds thin async wrappers around the new SDK modules; tool surface expansion happens in `tools.py`. The architecture style (single-process stateless CLI) is unchanged.
+
 ## Overview
 
 **Architecture style:** Single-process Python CLI application (monolith).
@@ -42,22 +50,41 @@
 
 ### Module: `tools` (`tools.py`)
 
-- **Responsibility:** Implements the two MCP tool handlers (`text_to_speech`, `list_voices`). Handles all input validation and output formatting.
+- **Responsibility:** Implements all MCP tool handlers. Handles input validation and output formatting.
 - **Dependencies:** `supertone_client` module.
-- **Key interfaces:**
+- **Key interfaces (v0.1):**
   - `async text_to_speech(text, voice_id?, language?, output_format?, speed?, pitch_shift?, style?) -> str` -- Validates inputs, calls client, saves file, returns formatted plain-text response.
-  - `async list_voices(language?) -> str` -- Validates inputs, calls client, formats voice list as plain text.
+  - ~~`async list_voices(language?) -> str`~~ -- **Removed in v0.2** (replaced by `search_voice`).
+- **Key interfaces (added in v0.2):**
+  - `async search_voice(name?, description?, language?, gender?, age?, use_case?, style?, model?) -> str` -- Server-side filter via SDK `voices.search_voices_async`. Output includes a `Filters applied:` prefix line when any filter is set.
+  - `async get_voice(voice_id) -> str` -- Detail view including sample count and thumbnail URL.
+  - `async get_credit_balance() -> str` -- Reads `usage.get_credit_balance_async`.
+  - `async preview_voice(voice_id, language?, style?, model?) -> str` -- Returns sample URLs filtered from `get_voice_async` samples; no autoplay in v0.2.
+  - `async predict_duration(text, voice_id?, language?, model?, output_format?, speed?, pitch_shift?, style?) -> str` -- Calls SDK `predict_duration_async`. Same input validation as `text_to_speech`. No file produced.
+  - `async clone_voice(name, audio_path, description?) -> str` -- Pre-validates extension (.wav/.mp3), size (≤3MB), file existence, and non-empty name before calling `custom_voices.create_cloned_voice_async`. Single file only.
+  - `async search_custom_voice(name?, description?) -> str` -- Lists user's cloned voices.
+  - `async edit_custom_voice(voice_id, name?, description?) -> str` -- Partial update; requires at least one of `name`/`description`.
+  - `async delete_custom_voice(voice_id) -> str` -- Irreversible; no confirm gate in v0.2 (warning encoded in tool description text).
 
 ### Module: `supertone_client` (`supertone_client.py`)
 
-- **Responsibility:** Wraps all HTTP communication with the Supertone API. Translates HTTP errors into domain-specific exceptions.
-- **Dependencies:** `httpx`.
-- **Key interfaces:**
+- **Responsibility:** Thin async wrapper around the official Supertone Python SDK. Translates SDK exceptions into the project's domain-specific exceptions (`SupertoneAuthError`, `SupertoneRateLimitError`, etc.).
+- **Dependencies:** `supertone` SDK (which in turn depends on `httpx`).
+- **Key interfaces (v0.1):**
   - `class SupertoneClient`:
-    - `__init__(api_key: str, base_url: str)` -- Configures the async HTTP client.
-    - `async synthesize(voice_id: str, text: str, language: str, output_format: str, speed: float, pitch_shift: int, style: str | None) -> tuple[bytes, dict]` -- Calls `POST /v1/text-to-speech/{voice_id}`, returns raw audio bytes and response headers/metadata.
-    - `async get_voices() -> list[dict]` -- Calls `GET /v1/voices`, returns parsed JSON list.
-    - `async aclose()` -- Closes the underlying httpx client.
+    - `__init__(api_key: str, base_url: str)` -- Configures the SDK client.
+    - `async synthesize(voice_id, text, language, output_format, speed, pitch_shift, style) -> tuple[bytes, dict]` -- Calls SDK `text_to_speech.text_to_speech_async`; returns raw audio bytes and response metadata.
+    - ~~`async get_voices() -> list[dict]`~~ -- **Removed in v0.2** (use `search_voices`).
+    - `async aclose()` -- Closes the SDK client.
+- **Key interfaces (added in v0.2):**
+  - `async search_voices(name?, description?, language?, gender?, age?, use_case?, style?, model?) -> list[dict]` -- Wraps `voices.search_voices_async`. Returns list of voice dicts.
+  - `async get_voice(voice_id) -> dict` -- Wraps `voices.get_voice_async`. The returned dict includes a `samples` list (each sample: language, style, model, url) used by both `get_voice` and `preview_voice` tools.
+  - `async get_credit_balance() -> dict` -- Wraps `usage.get_credit_balance_async`.
+  - `async predict_duration(text, voice_id, ...) -> float` -- Wraps `text_to_speech.predict_duration_async`. Returns predicted seconds as a float.
+  - `async create_cloned_voice(name, file_name, content_bytes, content_type, description?) -> dict` -- Wraps `custom_voices.create_cloned_voice_async`. Caller passes already-validated bytes; client does not read from disk.
+  - `async search_custom_voices(name?, description?) -> list[dict]` -- Wraps `custom_voices.search_custom_voices_async`.
+  - `async edit_custom_voice(voice_id, name?, description?) -> dict` -- Wraps `custom_voices.edit_custom_voice_async`.
+  - `async delete_custom_voice(voice_id) -> None` -- Wraps `custom_voices.delete_custom_voice_async`.
 
 ### Module: `__init__.py`
 
@@ -119,31 +146,62 @@ Error response (plain text):
   "{What went wrong}. {What to do}."
 ```
 
-#### `list_voices`
+#### `list_voices` (REMOVED in v0.2 — see `search_voice`)
+
+```
+Status: REMOVED (breaking change)
+Replacement: search_voice (accepts richer filters: name, description, language, gender, age, use_case, style, model)
+Migration: search_voice() with no arguments reproduces list_voices' default behavior.
+```
+
+#### `search_voice` (v0.2)
 
 ```
 Method: MCP tool call
-Parameters:
-  language: str  (optional, enum: ["ko", "en", "ja"])
+Parameters (all optional):
+  name: str            (partial match)
+  description: str     (partial match)
+  language: str        (e.g., "ko", "en", "ja")
+  gender: str          (e.g., "male", "female")
+  age: str             (e.g., "young_adult", "child")
+  use_case: str
+  style: str
+  model: str
 
 Success response (plain text):
-  Found N voices [matching language: xx]:
+  Filters applied: language=ko, gender=female      <- only when any filter is set
+  Found N voices:
 
   1. Name: ...
      Voice ID: ...
      Languages: ...
      Styles: ...
 
-Error response (plain text):
-  "{What went wrong}. {What to do}."
+Zero results: "No voices found matching the filters."
+Error response: "{What went wrong}. {What to do}."
 ```
 
-### Supertone API Integration
+#### Other v0.2 tools
 
-| Operation | Method | Path | Auth Header | Request Body | Response |
-|-----------|--------|------|-------------|-------------|----------|
-| Synthesize | POST | `/v1/text-to-speech/{voice_id}` | `x-sup-api-key: {key}` | JSON: `{text, language, output_format, speed, pitch_shift, style}` | Binary audio stream |
-| List voices | GET | `/v1/voices` | `x-sup-api-key: {key}` | None | JSON array of voice objects |
+See `docs/ux_spec.md` §2.4–2.11 and §4.4–4.11 for the input/output schemas of `get_voice`, `get_credit_balance`, `preview_voice`, `predict_duration`, `clone_voice`, `search_custom_voice`, `edit_custom_voice`, and `delete_custom_voice`. The MCP server registers all of these in addition to `text_to_speech` and `search_voice`.
+
+### Supertone API Integration (v0.2 via official SDK)
+
+The MCP server no longer issues raw HTTP requests directly — all calls go through the official `supertone` Python SDK (the SDK uses `x-sup-api-key` headers under the hood). The table below documents the SDK methods used.
+
+| Operation | SDK Module | Method | Returns |
+|-----------|-----------|--------|---------|
+| Synthesize | `text_to_speech` | `text_to_speech_async(voice_id, text, language, output_format, speed, pitch_shift, style)` | Audio bytes (or async stream wrapper) + response headers |
+| Predict duration | `text_to_speech` | `predict_duration_async(text, voice_id, language, model, output_format, speed, pitch_shift, style)` | float (seconds) |
+| Search voices | `voices` | `search_voices_async(name, description, language, gender, age, use_case, use_cases, style, model)` | List of voice dicts |
+| Get voice detail | `voices` | `get_voice_async(voice_id)` | `GetCharacterByIDResponse` with voice_id, name, description, age, gender, use_cases, language[], styles[], models[], samples[], thumbnail_image_url |
+| Credit balance | `usage` | `get_credit_balance_async()` | Credit info dict |
+| Clone voice (create) | `custom_voices` | `create_cloned_voice_async(name, files=[Files(file_name, content, content_type)], description?)` | Created voice dict (incl. voice_id) |
+| Search custom voices | `custom_voices` | `search_custom_voices_async(name?, description?)` | List of custom voice dicts |
+| Edit custom voice | `custom_voices` | `edit_custom_voice_async(voice_id, name?, description?)` | Updated voice dict |
+| Delete custom voice | `custom_voices` | `delete_custom_voice_async(voice_id)` | None |
+
+> v0.1 listed the Supertone endpoints `POST /v1/text-to-speech/{voice_id}` and `GET /v1/voices` directly. These are still the underlying REST endpoints, but the MCP server no longer constructs them by hand.
 
 ### Authentication
 
@@ -156,7 +214,7 @@ Error response (plain text):
 
 - No rate limiting on the MCP server side (out of scope per requirements).
 - Supertone API rate limits (20-60 req/min) are passed through as HTTP 429 errors with actionable messages.
-- No pagination needed -- `list_voices` returns all voices in a single call (expected to be a small list).
+- No pagination is exposed in the MCP tool surface. `search_voice` and `search_custom_voice` rely on the Supertone SDK's default page size (expected to be sufficient for the small catalogs typical in v0.2).
 
 ---
 
