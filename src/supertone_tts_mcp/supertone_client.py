@@ -17,7 +17,12 @@ from supertone_tts_mcp.exceptions import (
     SupertoneRateLimitError,
     SupertoneServerError,
 )
-from supertone_tts_mcp.models import VoiceDict
+from supertone_tts_mcp.models import (
+    CreditBalanceDict,
+    SampleDict,
+    VoiceDetailDict,
+    VoiceDict,
+)
 
 # Map string language codes to SDK enum values
 _LANGUAGE_MAP = {
@@ -222,6 +227,138 @@ class SupertoneClient:
                 break
 
         return all_voices
+
+    async def search_voices(
+        self,
+        name: str | None = None,
+        description: str | None = None,
+        language: str | None = None,
+        gender: str | None = None,
+        age: str | None = None,
+        use_case: str | None = None,
+        use_cases: str | None = None,
+        style: str | None = None,
+        model: str | None = None,
+    ) -> list[VoiceDict]:
+        """Search voices on the Supertone API with optional filters.
+
+        All filter params are pass-through strings (per SDK signature); enum
+        validation is delegated to the API. Auto-paginates and returns the
+        full concatenated list as `VoiceDict` entries (same shape as
+        `get_voices()`).
+        """
+        all_voices: list[VoiceDict] = []
+        next_page_token: str | None = None
+
+        while True:
+            try:
+                response = await self._sdk.voices.search_voices_async(
+                    page_size=100,
+                    next_page_token=next_page_token,
+                    name=name,
+                    description=description,
+                    language=language,
+                    gender=gender,
+                    age=age,
+                    use_case=use_case,
+                    use_cases=use_cases,
+                    style=style,
+                    model=model,
+                )
+            except (
+                UnauthorizedErrorResponse,
+                ForbiddenErrorResponse,
+                TooManyRequestsErrorResponse,
+                InternalServerErrorResponse,
+                NoResponseError,
+                httpx.ConnectError,
+                httpx.TimeoutException,
+            ) as exc:
+                _handle_sdk_errors(exc)
+
+            for item in response.items:
+                voice: VoiceDict = {
+                    "voice_id": item.voice_id,
+                    "name": item.name,
+                    "supported_languages": item.language,
+                    "supported_styles": item.styles,
+                }
+                all_voices.append(voice)
+
+            next_page_token = response.next_page_token
+            if not next_page_token:
+                break
+
+        return all_voices
+
+    async def get_voice(self, voice_id: str) -> VoiceDetailDict:
+        """Fetch full detail for a single voice by ID.
+
+        Maps the SDK `GetCharacterByIDResponse` into a `VoiceDetailDict`,
+        renaming `language` to `supported_languages` for consistency with
+        `VoiceDict`. Optional fields (`samples`, `thumbnail_image_url`) are
+        only included when the SDK returned non-None values.
+        """
+        try:
+            response = await self._sdk.voices.get_voice_async(voice_id=voice_id)
+        except (
+            UnauthorizedErrorResponse,
+            ForbiddenErrorResponse,
+            TooManyRequestsErrorResponse,
+            InternalServerErrorResponse,
+            NoResponseError,
+            httpx.ConnectError,
+            httpx.TimeoutException,
+        ) as exc:
+            _handle_sdk_errors(exc)
+
+        detail: VoiceDetailDict = {
+            "voice_id": response.voice_id,
+            "name": response.name,
+            "description": response.description,
+            "age": response.age,
+            "gender": response.gender,
+            "use_case": response.use_case,
+            "use_cases": response.use_cases,
+            "supported_languages": response.language,
+            "styles": response.styles,
+            "models": response.models,
+        }
+
+        samples = getattr(response, "samples", None)
+        if samples is not None:
+            detail["samples"] = [
+                SampleDict(
+                    language=s.language,
+                    style=s.style,
+                    model=s.model,
+                    url=s.url,
+                )
+                for s in samples
+            ]
+
+        thumbnail = getattr(response, "thumbnail_image_url", None)
+        if thumbnail is not None:
+            detail["thumbnail_image_url"] = thumbnail
+
+        return detail
+
+    async def get_credit_balance(self) -> CreditBalanceDict:
+        """Fetch the current credit balance for the authenticated user."""
+        try:
+            response = await self._sdk.usage.get_credit_balance_async()
+        except (
+            UnauthorizedErrorResponse,
+            ForbiddenErrorResponse,
+            TooManyRequestsErrorResponse,
+            InternalServerErrorResponse,
+            NoResponseError,
+            httpx.ConnectError,
+            httpx.TimeoutException,
+        ) as exc:
+            _handle_sdk_errors(exc)
+
+        return {"balance": response.balance}
 
     async def aclose(self) -> None:
         """Close the underlying SDK HTTP client."""
