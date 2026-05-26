@@ -525,8 +525,8 @@ def _make_voice_detail(
     language=None,
     styles=None,
     models=None,
-    samples=None,
-    thumbnail_image_url="https://cdn.test/v1.png",
+    samples: list | None = None,
+    thumbnail_image_url: str | None = "https://cdn.test/v1.png",
 ):
     """Build a mock GetCharacterByIDResponse with all required fields populated."""
     mock = MagicMock()
@@ -560,7 +560,7 @@ def _make_sample(
     return mock
 
 
-def _make_credit_balance(balance=100.5):
+def _make_credit_balance(balance: float | None = 100.5):
     """Build a mock GetCreditBalanceResponse."""
     mock = MagicMock()
     mock.balance = balance
