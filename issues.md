@@ -21,6 +21,14 @@
 | ISSUE-010 | Write README and MCP client configuration docs | P2 | 0.5d | ISSUE-007 | done |
 | ISSUE-011 | Create server.json and register on MCP Registry and PulseMCP | P2 | 0.5d | ISSUE-008 | backlog |
 | ISSUE-012 | ElevenLabs-style audio output modes (files/resources/both) | P1 | 0.5d | ISSUE-005 | done |
+| ISSUE-013 | Update PRD/docs for v0.2 (voice discovery + cloning) | P0 | 0.5d | none | backlog |
+| ISSUE-014 | Extend SupertoneClient with voice discovery methods | P0 | 0.5d | ISSUE-013 | backlog |
+| ISSUE-015 | Replace `list_voices` with `search_voice` tool (breaking) | P1 | 0.5d | ISSUE-014 | backlog |
+| ISSUE-016 | Add `get_voice` + `get_credit_balance` tools | P1 | 0.5d | ISSUE-014 | backlog |
+| ISSUE-017 | Add `preview_voice` tool (returns sample URLs) | P1 | 0.5d | ISSUE-014, ISSUE-016 | backlog |
+| ISSUE-018 | Add `predict_duration` tool (client + handler) | P1 | 0.5d | ISSUE-014 | backlog |
+| ISSUE-019 | Add `clone_voice` tool (single file ≤3MB) | P1 | 1d | ISSUE-014 | backlog |
+| ISSUE-020 | Custom voice CRUD tools (search/edit/delete) | P1 | 1d | ISSUE-019 | backlog |
 
 ---
 
@@ -614,6 +622,404 @@ Revert changes to constants.py, tools.py, server.py, test_tools.py, test_server.
 
 ---
 
+### ISSUE-013: Update PRD/docs for v0.2 (voice discovery + cloning)
+- Track: platform
+- PRD-Ref: PRD §3, §6, §11
+- Priority: P0
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+Project documents reflect the v0.2 scope: voice discovery (search_voice, get_voice, get_credit_balance, preview_voice), duration prediction (predict_duration), and voice cloning CRUD (clone_voice, search/edit/delete_custom_voice). The follow-up implementation issues (ISSUE-014~020) can reference concrete FR numbers.
+
+#### Scope (In/Out)
+- In: PRD.md updates (move clone_voice and predict_duration out of §3 Non-Goals into §6 FRs; assign FR-012~FR-019 to new tools; add user stories US-008~US-011; update §11 Future Considerations accordingly), `docs/requirements.md` regenerated/extended for new FRs, `docs/architecture.md` note on `custom_voices` and `usage` SDK modules, `docs/ux_spec.md` text/error message specs for each new tool, STATUS.md reset to "M4: v0.2 implementation"
+- Out: Any code changes, test files
+
+#### Acceptance Criteria (DoD)
+- [ ] Given PRD.md, when §3 is inspected, then voice cloning and duration prediction are no longer listed as Non-Goals
+- [ ] Given PRD.md, when §6 is inspected, then FR-012 (search_voice), FR-013 (get_voice), FR-014 (get_credit_balance), FR-015 (preview_voice), FR-016 (predict_duration), FR-017 (clone_voice), FR-018 (search_custom_voice), FR-019 (edit/delete_custom_voice) are documented with input/output specs
+- [ ] Given PRD.md, when §5 is inspected, then user stories US-008 (search/preview voices to choose one), US-009 (check credits before TTS), US-010 (predict duration), US-011 (clone and manage custom voices) are listed
+- [ ] Given `docs/ux_spec.md`, when inspected, then it contains exact tool descriptions and error message text for each new tool
+- [ ] Given a `docs(claude)` commit, when inspected, then it follows the claude.md sync rule
+
+#### Implementation Notes
+- Use existing PRD style/structure; do not invent new sections
+- Cross-reference SDK methods discovered during API verification (`voices.search_voices_async`, etc.)
+- Keep clone_voice constraints explicit: WAV/MP3, ≤3MB, single file
+- `preview_voice` returns sample URL(s); no autoplay in v0.2
+- delete_custom_voice has no confirm gate at this stage (per product decision)
+
+#### Tests
+- [ ] PRD-Ref forward references in ISSUE-014~020 resolve to actual FR numbers after this issue is merged (manual verification)
+
+#### Rollback
+Revert PRD.md, docs/*.md, STATUS.md changes.
+
+---
+
+### ISSUE-014: Extend SupertoneClient with voice discovery methods
+- Track: product
+- PRD-Ref: FR-012, FR-013, FR-014
+- Priority: P0
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-013
+
+#### Goal
+`SupertoneClient` exposes `search_voices()`, `get_voice()`, and `get_credit_balance()` async methods that wrap the corresponding SDK calls with consistent error handling.
+
+#### Scope (In/Out)
+- In: New methods on `SupertoneClient`: `async search_voices(name?, description?, language?, gender?, age?, use_case?, style?, model?) -> list[VoiceDict]` (auto-paginates), `async get_voice(voice_id) -> VoiceDetailDict` (new TypedDict with samples/models/styles/use_cases/thumbnail), `async get_credit_balance() -> CreditBalanceDict`. New TypedDicts in `models.py` (VoiceDetailDict, SampleDict, CreditBalanceDict). Error mapping reuses existing `_handle_sdk_errors`.
+- Out: Tool handlers (ISSUE-015~016), formatting functions
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a mocked SDK returning a paginated voice list, when `search_voices(gender="female")` is called, then all pages are concatenated and returned as `list[VoiceDict]`
+- [ ] Given a mocked SDK 200 response for a single voice, when `get_voice("v1")` is called, then a `VoiceDetailDict` with `samples`, `models`, `styles`, `use_cases`, `thumbnail_image_url` is returned
+- [ ] Given a mocked SDK 401 on any of the three methods, when called, then `SupertoneAuthError` is raised
+- [ ] Given a mocked SDK 429 on any method, when called, then `SupertoneRateLimitError` is raised
+- [ ] Given `models.py`, when `VoiceDetailDict` is imported, then it includes typed fields matching the SDK `GetCharacterByIDResponse` shape
+
+#### Implementation Notes
+- File: `src/supertone_tts_mcp/supertone_client.py` (extend)
+- SDK methods: `voices.search_voices_async`, `voices.get_voice_async`, `usage.get_credit_balance_async`
+- `search_voices` filter params are all `Optional[str]` per SDK signature — pass-through
+- Pagination loop pattern same as existing `get_voices`
+- Add new TypedDicts to `models.py` (do not modify existing `VoiceDict` to preserve `list_voices` until ISSUE-015 removes it)
+- Test file: `tests/test_supertone_client.py` (extend)
+
+#### Tests
+- [ ] Test search_voices pagination concatenates pages
+- [ ] Test search_voices passes all filter params through to SDK
+- [ ] Test get_voice returns full detail dict
+- [ ] Test get_credit_balance returns balance dict
+- [ ] Test 401/403 raises SupertoneAuthError on each method
+- [ ] Test 429 raises SupertoneRateLimitError on each method
+- [ ] Test 5xx raises SupertoneServerError on each method
+- [ ] Test connection error raises SupertoneConnectionError on each method
+
+#### Rollback
+Revert SupertoneClient additions and corresponding tests; revert new TypedDicts in models.py.
+
+---
+
+### ISSUE-015: Replace `list_voices` with `search_voice` tool (breaking)
+- Track: product
+- PRD-Ref: FR-012, US-008
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-014
+
+#### Goal
+The `list_voices` tool is removed and replaced by `search_voice`, which accepts server-side filters (language, gender, age, use_case, style, model, name, description) and returns a formatted voice list. Without filters, behavior is equivalent to the old `list_voices`.
+
+#### Scope (In/Out)
+- In: New `async search_voice(language?, gender?, age?, use_case?, style?, model?, name?, description?) -> str` tool handler in `tools.py`; removal of `list_voices` handler; updated/extended `format_voice_list()` to include filter summary line; server registration replaces `list_voices` with `search_voice` (with full parameter schema and description); README updated; tests for `list_voices` removed; new tests for `search_voice`
+- Out: get_voice (ISSUE-016), preview_voice (ISSUE-017)
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the package, when `tools/list` is queried, then `list_voices` is NOT registered and `search_voice` IS registered
+- [ ] Given `search_voice()` with no parameters, when called against a mocked SDK returning 3 voices, then all 3 are returned in numbered list format
+- [ ] Given `search_voice(gender="female", language="ko")`, when called, then the underlying SDK call receives both filters and the response shows the active filters in the header line
+- [ ] Given the API returns 0 results, when `search_voice(gender="zzz")` is called, then the response is `"No voices found matching the filters."`
+- [ ] Given the API returns 401, when `search_voice()` is called, then the auth error string is returned
+- [ ] Given the server is running, when the `search_voice` tool description is inspected, then it matches the UX spec (per ISSUE-013)
+
+#### Implementation Notes
+- File: `src/supertone_tts_mcp/tools.py` — remove `list_voices`, add `search_voice`
+- File: `src/supertone_tts_mcp/server.py` — replace tool registration
+- Filter values are passed through; do not validate enum membership client-side (SDK/API authoritative). EXCEPT keep `validate_language` if language is provided
+- `format_voice_list` extended: if any filter is non-None, prefix output with `Filters applied: {k=v, ...}` line
+- Update README.md examples
+- Test files: `tests/test_tools.py`, `tests/test_server.py` — delete list_voices tests, add search_voice tests
+
+#### Tests
+- [ ] Test search_voice with no filters returns all voices
+- [ ] Test search_voice with single filter passes it to client
+- [ ] Test search_voice with multiple filters passes all to client
+- [ ] Test search_voice empty result returns "No voices found matching the filters."
+- [ ] Test search_voice 401 returns auth error string
+- [ ] Test server registers `search_voice` and NOT `list_voices`
+- [ ] Test format_voice_list shows filter summary header when filters are active
+
+#### Rollback
+Restore `list_voices` handler/tests; revert server registration; revert README.
+
+---
+
+### ISSUE-016: Add `get_voice` + `get_credit_balance` tools
+- Track: product
+- PRD-Ref: FR-013, FR-014, US-008, US-009
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-014
+
+#### Goal
+Two small inspection tools are added: `get_voice(voice_id)` returns full voice detail (description, age, gender, use_cases, languages, styles, models, sample URLs, thumbnail), and `get_credit_balance()` returns the current credit balance.
+
+#### Scope (In/Out)
+- In: `async get_voice(voice_id: str) -> str` and `async get_credit_balance() -> str` handlers in `tools.py`, new `format_voice_detail(VoiceDetailDict) -> str` and `format_credit_balance(CreditBalanceDict) -> str` formatters, server registration for both tools, tests
+- Out: preview_voice (ISSUE-017)
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a mocked client returning a voice detail, when `get_voice("v1")` is called, then the response includes voice_id, name, description, age, gender, use_cases (joined), languages (joined), styles (joined), models (joined), and sample count
+- [ ] Given `get_voice("")` or whitespace, when called, then a validation error string is returned without an API call
+- [ ] Given a mocked client raising `SupertoneAuthError`, when `get_voice("v1")` is called, then the auth error string is returned
+- [ ] Given a mocked client returning a credit balance, when `get_credit_balance()` is called, then the response includes the numeric balance and (if present) plan/expiry info
+- [ ] Given the server is running, when `tools/list` is queried, then both `get_voice` and `get_credit_balance` are registered
+
+#### Implementation Notes
+- File: `src/supertone_tts_mcp/tools.py` (add 2 handlers + 2 formatters)
+- File: `src/supertone_tts_mcp/server.py` (register both)
+- `format_voice_detail` is multi-line plain text; do NOT include sample URLs in this formatter (URLs are surfaced via `preview_voice` in ISSUE-017)
+- `format_credit_balance` is single-line: e.g. `Credit balance: 12,345 chars remaining.`
+- Validate `voice_id` is non-empty string in `get_voice`
+- Test file: `tests/test_tools.py`, `tests/test_server.py`
+
+#### Tests
+- [ ] Test get_voice happy path returns formatted detail
+- [ ] Test get_voice with empty voice_id returns validation error string
+- [ ] Test get_voice auth/connection errors return formatted error strings
+- [ ] Test get_credit_balance happy path returns formatted balance
+- [ ] Test get_credit_balance auth/connection errors return formatted error strings
+- [ ] Test server registers both tools with correct schemas
+
+#### Rollback
+Revert tools.py additions, server.py registrations, and related tests.
+
+---
+
+### ISSUE-017: Add `preview_voice` tool (returns sample URLs)
+- Track: product
+- PRD-Ref: FR-015, US-008
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-014, ISSUE-016
+
+#### Goal
+`preview_voice(voice_id, language?, style?, model?)` returns matching sample audio URLs from the voice's `samples` array so users (or the client) can listen to a preview before choosing a voice.
+
+#### Scope (In/Out)
+- In: `async preview_voice(voice_id, language?, style?, model?) -> str` handler that calls `get_voice()` under the hood and filters the `samples` array; new `format_voice_samples(samples, filters) -> str` formatter; server registration; tests
+- Out: Local autoplay (deferred to a future `play_audio_url` tool)
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a voice with 4 samples and no filters, when `preview_voice("v1")` is called, then all 4 sample URLs are returned with their language/style/model metadata
+- [ ] Given a voice and `language="ko"`, when called, then only Korean samples are returned
+- [ ] Given a voice and `language="ko", style="happy"`, when called, then samples matching both are returned
+- [ ] Given filters that match nothing, when called, then `"No matching samples for the given filters."` is returned
+- [ ] Given a voice with no samples at all (samples is None or []), when called, then `"This voice has no preview samples."` is returned
+- [ ] Given an empty voice_id, when called, then a validation error string is returned
+- [ ] Given auth/connection errors, when called, then the appropriate formatted error string is returned
+
+#### Implementation Notes
+- File: `src/supertone_tts_mcp/tools.py` (add handler + formatter)
+- File: `src/supertone_tts_mcp/server.py` (register tool)
+- `format_voice_samples` output (one per line):
+  ```
+  1. [language=ko, style=happy, model=sona_speech_1] https://.../sample.wav
+  ```
+- Reuse `get_voice` from ISSUE-016 (call the SDK once to fetch voice detail, then filter `samples`)
+- Test file: `tests/test_tools.py`, `tests/test_server.py`
+
+#### Tests
+- [ ] Test preview_voice with no filter returns all samples
+- [ ] Test preview_voice with each filter dimension narrows results correctly
+- [ ] Test preview_voice with combined filters narrows correctly
+- [ ] Test preview_voice empty samples returns "no preview samples" message
+- [ ] Test preview_voice no-match filter returns "no matching samples" message
+- [ ] Test preview_voice empty voice_id returns validation error
+- [ ] Test preview_voice auth/connection errors are formatted
+
+#### Rollback
+Revert tools.py additions, server.py registration, and related tests.
+
+---
+
+### ISSUE-018: Add `predict_duration` tool (client + handler)
+- Track: product
+- PRD-Ref: FR-016, US-010
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-014
+
+#### Goal
+`predict_duration(text, voice_id?, language?, model?, output_format?, speed?, pitch_shift?, style?)` calls the Supertone duration prediction API and returns the predicted audio length in seconds, which is proportional to credit consumption.
+
+#### Scope (In/Out)
+- In: New `async predict_duration(...)` method on `SupertoneClient` wrapping `text_to_speech.predict_duration_async`, new `async predict_duration(...)` tool handler in `tools.py`, validation reuse (text/language/speed/pitch_shift/output_format), server registration, tests
+- Out: Cost-in-currency calculation (only seconds; the response wording notes proportionality to credits)
+
+#### Acceptance Criteria (DoD)
+- [ ] Given valid params and a mocked client returning duration=2.34, when `predict_duration(text="hi")` is called, then the response is `"Predicted duration: 2.34s (credit usage is proportional to duration)."`
+- [ ] Given text >300 chars, when called, then the validation error string is returned without an API call
+- [ ] Given invalid speed/pitch/language/format, when called, then the matching validation error is returned
+- [ ] Given the API returns 401, when called, then the auth error string is returned
+- [ ] Given the API returns 429, when called, then the rate limit error string is returned
+- [ ] Given the server, when `tools/list` is queried, then `predict_duration` is registered with the same parameter schema as `text_to_speech` except no `output_format` defaulting differences
+
+#### Implementation Notes
+- File: `src/supertone_tts_mcp/supertone_client.py` (add method)
+- File: `src/supertone_tts_mcp/tools.py` (add handler)
+- File: `src/supertone_tts_mcp/server.py` (register)
+- Default voice_id uses the same env-var resolution as `text_to_speech` (`SUPERTONE_VOICE_ID`)
+- Default model: `sona_speech_1` (SDK default)
+- Default output_format: `wav` (SDK default; duration is format-agnostic in practice but match SDK)
+- Test files: `tests/test_supertone_client.py`, `tests/test_tools.py`, `tests/test_server.py`
+
+#### Tests
+- [ ] Test SDK method wrapper passes all params through
+- [ ] Test handler happy path returns formatted duration
+- [ ] Test handler text-length validation
+- [ ] Test handler speed/pitch/language/format validation
+- [ ] Test handler default voice_id resolution
+- [ ] Test handler auth/rate/connection errors are formatted
+- [ ] Test server registers predict_duration
+
+#### Rollback
+Revert client method, tool handler, server registration, and tests.
+
+---
+
+### ISSUE-019: Add `clone_voice` tool (single file ≤3MB)
+- Track: product
+- PRD-Ref: FR-017, US-011
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-014
+
+#### Goal
+`clone_voice(name, audio_path, description?)` creates a custom (cloned) voice from a local audio file (WAV or MP3, ≤3MB) and returns the new custom voice ID.
+
+#### Scope (In/Out)
+- In: New `async create_cloned_voice(name, audio_bytes, file_name, content_type, description?) -> dict` method on `SupertoneClient` wrapping `custom_voices.create_cloned_voice_async`, new `async clone_voice(name, audio_path, description?) -> str` tool handler that reads the file, validates extension/size, builds the SDK `Files` payload, and calls the client. Validation functions (`validate_audio_path`, `validate_audio_file_size`) in tools.py. Server registration. Tests.
+- Out: Multi-file clone (single only per product decision), custom voice browsing/editing (ISSUE-020)
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a valid local WAV file ≤3MB and `clone_voice(name="MyVoice", audio_path=path)`, when called, then the file is read, sent to the SDK, and the new voice_id is returned in a formatted response
+- [ ] Given `audio_path` pointing to a non-existent file, when called, then `"Audio file not found: {path}"` is returned without an API call
+- [ ] Given `audio_path` with an unsupported extension (e.g. `.ogg`), when called, then `"Unsupported audio format. Supported: WAV, MP3."` is returned without an API call
+- [ ] Given an audio file >3MB, when called, then `"Audio file too large: {size_mb:.2f}MB. Maximum: 3MB."` is returned without an API call
+- [ ] Given `name=""` or whitespace, when called, then `"Voice name must not be empty."` is returned without an API call
+- [ ] Given the API returns 401, when called, then the auth error string is returned
+- [ ] Given the server, when `tools/list` is queried, then `clone_voice` is registered with required params `name` and `audio_path`, and optional `description`
+
+#### Implementation Notes
+- File: `src/supertone_tts_mcp/supertone_client.py` (add method)
+- File: `src/supertone_tts_mcp/tools.py` (add handler + validators)
+- File: `src/supertone_tts_mcp/server.py` (register)
+- `audio_path` is a local filesystem path string; expand `~` with `Path.expanduser()`
+- Read file with `Path.read_bytes()` after size check (use `stat().st_size` first to fail fast)
+- Map extension → content_type: `.wav` → `audio/wav`, `.mp3` → `audio/mpeg`
+- SDK `Files` object: `{file_name: basename, content: bytes, content_type: mime}`
+- Response format: `Custom voice created. voice_id: {id}. Use this voice_id in text_to_speech.`
+- Constants: `MAX_AUDIO_FILE_BYTES = 3 * 1024 * 1024`, `SUPPORTED_CLONE_FORMATS = {".wav": "audio/wav", ".mp3": "audio/mpeg"}`
+- Test fixtures: tiny WAV (a few bytes) for happy path; oversize file simulated via mocked stat
+
+#### Tests
+- [ ] Test client method passes correct Files payload
+- [ ] Test handler happy path with WAV
+- [ ] Test handler happy path with MP3
+- [ ] Test handler missing file returns error
+- [ ] Test handler unsupported extension returns error
+- [ ] Test handler oversize file returns error (mock stat)
+- [ ] Test handler empty name returns error
+- [ ] Test handler expands `~` in path
+- [ ] Test handler auth/connection errors are formatted
+- [ ] Test server registers clone_voice with correct schema
+
+#### Rollback
+Revert client method, tool handler, validators, constants, server registration, and tests.
+
+---
+
+### ISSUE-020: Custom voice CRUD tools (search/edit/delete)
+- Track: product
+- PRD-Ref: FR-018, FR-019, US-011
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-019
+
+#### Goal
+Three tools for managing custom (cloned) voices: `search_custom_voice` (filtered listing), `edit_custom_voice` (name/description partial update), and `delete_custom_voice` (remove by ID). No destructive-confirm gate at this stage.
+
+#### Scope (In/Out)
+- In: Three new methods on `SupertoneClient` wrapping `custom_voices.search_custom_voices_async`, `custom_voices.edit_custom_voice_async`, `custom_voices.delete_custom_voice_async`. Three tool handlers in `tools.py`. Server registration of all three. Formatter for custom voice list (reuse `format_voice_list` if compatible, else a small variant). Tests.
+- Out: get_custom_voice (deferred — list/search output is sufficient for now), delete confirmation flow
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a mocked client returning 2 custom voices, when `search_custom_voice()` is called, then both are returned in a numbered list with name/description/voice_id
+- [ ] Given filters (name/description), when `search_custom_voice(name="my")` is called, then only matching voices are returned
+- [ ] Given `edit_custom_voice("cv1", name="NewName")`, when called against a mocked SDK 200, then the response is `"Custom voice updated. voice_id: cv1."`
+- [ ] Given `edit_custom_voice("cv1")` with no name and no description, when called, then `"Provide at least one of: name, description."` is returned without an API call
+- [ ] Given `delete_custom_voice("cv1")`, when called against a mocked SDK 204/200, then the response is `"Custom voice deleted. voice_id: cv1."`
+- [ ] Given `delete_custom_voice("")` or whitespace, when called, then a validation error string is returned without an API call
+- [ ] Given any of the three returns 401, when called, then the auth error string is returned
+- [ ] Given the server, when `tools/list` is queried, then all three tools are registered
+
+#### Implementation Notes
+- File: `src/supertone_tts_mcp/supertone_client.py` (add 3 methods)
+- File: `src/supertone_tts_mcp/tools.py` (add 3 handlers + formatter)
+- File: `src/supertone_tts_mcp/server.py` (register all 3)
+- `search_custom_voice` pagination same pattern as `search_voices`
+- `edit_custom_voice` does partial update: only send fields that are non-None
+- `delete_custom_voice` is irreversible; tool description warns about this even without a confirm gate
+- Custom voice list format mirrors preset voice list but adds `description` field
+- Test files: `tests/test_supertone_client.py`, `tests/test_tools.py`, `tests/test_server.py`
+
+#### Tests
+- [ ] Test search_custom_voice pagination and filters
+- [ ] Test edit_custom_voice partial update (name only, description only, both)
+- [ ] Test edit_custom_voice with no fields returns validation error
+- [ ] Test delete_custom_voice happy path
+- [ ] Test delete_custom_voice empty voice_id returns validation error
+- [ ] Test all three handlers map auth/connection errors
+- [ ] Test server registers all three tools
+
+#### Rollback
+Revert client methods, tool handlers, server registrations, and tests.
+
+---
+
 ## Dependency Graph
 
 ```
@@ -650,6 +1056,31 @@ ISSUE-001 (Scaffold)
 - After ISSUE-003+004: ISSUE-005 and ISSUE-006 can run in parallel
 - After ISSUE-007: ISSUE-008, ISSUE-010 can run in parallel
 
+### v0.2 Sub-Graph (ISSUE-013 onwards)
+
+```
+ISSUE-013 (Docs sync — PRD/requirements/ux_spec)
+  |
+  +-- ISSUE-014 (Client: search/get/credit)
+        |
+        +-- ISSUE-015 (search_voice tool — replaces list_voices)
+        +-- ISSUE-016 (get_voice + get_credit_balance tools)
+        |     |
+        |     +-- ISSUE-017 (preview_voice tool)  [needs 014 + 016]
+        |
+        +-- ISSUE-018 (predict_duration: client + tool)
+        +-- ISSUE-019 (clone_voice: client + tool)
+              |
+              +-- ISSUE-020 (custom voice CRUD: search/edit/delete)
+```
+
+**v0.2 critical path:** 013 -> 014 -> (015, 016, 018, 019 in parallel) -> 017, 020
+
+**v0.2 parallelism:**
+- After ISSUE-014: ISSUE-015, ISSUE-016, ISSUE-018, ISSUE-019 can run in parallel
+- After ISSUE-016: ISSUE-017 unlocks
+- After ISSUE-019: ISSUE-020 unlocks
+
 ---
 
 ## Requirement Coverage Check
@@ -682,6 +1113,18 @@ ISSUE-001 (Scaffold)
 | NFR-006 | ISSUE-009 |
 | NFR-007 | ISSUE-003, ISSUE-004 |
 | NFR-008 | ISSUE-003 |
+| FR-012 (search_voice) | ISSUE-013, ISSUE-014, ISSUE-015 |
+| FR-013 (get_voice) | ISSUE-013, ISSUE-014, ISSUE-016 |
+| FR-014 (get_credit_balance) | ISSUE-013, ISSUE-014, ISSUE-016 |
+| FR-015 (preview_voice) | ISSUE-013, ISSUE-017 |
+| FR-016 (predict_duration) | ISSUE-013, ISSUE-018 |
+| FR-017 (clone_voice) | ISSUE-013, ISSUE-019 |
+| FR-018 (search_custom_voice) | ISSUE-013, ISSUE-020 |
+| FR-019 (edit/delete_custom_voice) | ISSUE-013, ISSUE-020 |
+| US-008 (browse/preview voices) | ISSUE-015, ISSUE-016, ISSUE-017 |
+| US-009 (check credits before TTS) | ISSUE-016 |
+| US-010 (predict duration) | ISSUE-018 |
+| US-011 (clone & manage custom voices) | ISSUE-019, ISSUE-020 |
 
 **Orphaned requirements:** None. All FRs, user stories, and NFRs are covered.
 
