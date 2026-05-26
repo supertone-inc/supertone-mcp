@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import NotRequired, TypedDict
+from typing import TypedDict
 from uuid import uuid4
 
 
@@ -76,6 +76,46 @@ class VoiceDict(TypedDict):
     name: str
     supported_languages: list[str]
     supported_styles: list[str]
+
+
+class SampleDict(TypedDict):
+    """Sample audio entry for a voice (mirrors SDK `APISampleData`)."""
+
+    language: str
+    style: str
+    model: str
+    url: str
+
+
+class VoiceDetailDict(TypedDict, total=False):
+    """Detailed voice entry (mirrors SDK `GetCharacterByIDResponse`).
+
+    `samples` and `thumbnail_image_url` are optional per the SDK schema.
+    `language` from the SDK is exposed here as `supported_languages` for
+    consistency with the existing `VoiceDict`.
+    """
+
+    voice_id: str
+    name: str
+    description: str
+    age: str
+    gender: str
+    use_case: str
+    use_cases: list[str]
+    supported_languages: list[str]
+    styles: list[str]
+    models: list[str]
+    samples: list[SampleDict]
+    thumbnail_image_url: str
+
+
+class CreditBalanceDict(TypedDict):
+    """Credit balance entry (mirrors SDK `GetCreditBalanceResponse`).
+
+    `balance` is nullable per the SDK schema.
+    """
+
+    balance: float | None
 
 
 def generate_output_path(output_dir: str, output_format: str) -> Path:

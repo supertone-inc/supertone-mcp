@@ -43,6 +43,7 @@
 | MCP server registration / tool discovery | Low (SDK handles it) | Critical -- nothing works if tools are not registered | **Medium** | Integration (manual verify) |
 | Default voice fallback | Medium (Assumption A4) | Medium -- omitting voice_id fails | **Medium** | Unit |
 | Output formatting (plain text, absolute paths) | Low | Low -- cosmetic but affects LLM parsing | **Low** | Unit |
+| Voice discovery client (`search_voices`, `get_voice`, `get_credit_balance`) — v0.2 | Medium (SDK pagination + nullable fields) | Medium -- discovery features (FR-012/013/014) unusable | **Medium** | Unit (pagination + error mapping + null-field handling), covered by ISSUE-014 |
 
 ---
 
