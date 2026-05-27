@@ -667,7 +667,7 @@ def format_credit_balance(balance: CreditBalanceDict) -> str:
     """Format a `CreditBalanceDict` as a single-line plain-text response.
 
     Per UX spec §4.5, the canonical line is:
-      `Credit balance: 12,345 chars remaining.`
+      `Credit balance: 12,345 credits remaining.`
 
     The SDK schema currently exposes only `balance` (nullable float). If the
     upstream payload one day grows `plan` / `expires_at` fields (the spec
@@ -681,7 +681,7 @@ def format_credit_balance(balance: CreditBalanceDict) -> str:
     else:
         balance_str = _format_int_with_commas(raw_balance)
 
-    lines = [f"Credit balance: {balance_str} chars remaining."]
+    lines = [f"Credit balance: {balance_str} credits remaining."]
 
     # Forward-compat: render optional `plan` / `expires_at` if the SDK starts
     # returning them. The current TypedDict only declares `balance`, so use

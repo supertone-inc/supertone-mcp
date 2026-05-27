@@ -30,7 +30,7 @@ supertone-tts (MCP Server)
 |   +-- preview_voice        Sample audio URLs for a voice (no autoplay in v0.2).
 |
 +-- Account
-|   +-- get_credit_balance   Remaining credit (chars).
+|   +-- get_credit_balance   Remaining credits.
 |
 +-- Voice cloning (custom voices)
     +-- clone_voice          Create a cloned voice from a local audio file (≤3MB, wav/mp3).
@@ -513,13 +513,13 @@ Use preview_voice to fetch sample URLs.
 
 #### Success State (minimal)
 
-**Output:** `Credit balance: 12345 chars remaining.`
+**Output:** `Credit balance: 12345 credits remaining.`
 
 #### Success State (with plan & expiry)
 
 **Output:**
 ```
-Credit balance: 12345 chars remaining.
+Credit balance: 12345 credits remaining.
 Plan: pro
 Expires: 2026-12-31
 ```

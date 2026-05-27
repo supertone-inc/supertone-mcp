@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcp.types import AudioContent, TextContent
-
 from supertone_tts_mcp.exceptions import (
     SupertoneAuthError,
     SupertoneConnectionError,
@@ -1420,11 +1419,11 @@ class TestFormatCreditBalance:
     def test_renders_integer_balance_with_thousands_separator(self):
         result = format_credit_balance(_make_credit_balance(balance=12345.0))
         # UX spec single-line canonical form
-        assert result == "Credit balance: 12,345 chars remaining."
+        assert result == "Credit balance: 12,345 credits remaining."
 
     def test_renders_large_balance(self):
         result = format_credit_balance(_make_credit_balance(balance=1_234_567.0))
-        assert "1,234,567 chars" in result
+        assert "1,234,567 credits" in result
 
     def test_renders_fractional_balance(self):
         result = format_credit_balance(_make_credit_balance(balance=12345.5))
@@ -1433,7 +1432,7 @@ class TestFormatCreditBalance:
     def test_renders_none_balance_as_unknown(self):
         result = format_credit_balance(_make_credit_balance(balance=None))
         assert "unknown" in result
-        assert "chars remaining" in result
+        assert "credits remaining" in result
 
     def test_renders_optional_plan_and_expiry_when_present(self):
         """Forward-compat path: SDK may add plan/expires_at."""
@@ -1444,7 +1443,7 @@ class TestFormatCreditBalance:
         }
         result = format_credit_balance(payload)
         lines = result.splitlines()
-        assert lines[0] == "Credit balance: 12,345 chars remaining."
+        assert lines[0] == "Credit balance: 12,345 credits remaining."
         assert "Plan: pro" in lines
         assert "Expires: 2026-12-31" in lines
 
@@ -1652,7 +1651,7 @@ class TestGetCreditBalanceHandler:
 
         inst.get_credit_balance.assert_called_once_with()
         # Single-line canonical form
-        assert result == "Credit balance: 12,345 chars remaining."
+        assert result == "Credit balance: 12,345 credits remaining."
 
     @pytest.mark.asyncio
     async def test_happy_path_with_plan_and_expiry(self):
@@ -1673,7 +1672,7 @@ class TestGetCreditBalanceHandler:
             result = await get_credit_balance()
 
         lines = result.splitlines()
-        assert lines[0] == "Credit balance: 12,345 chars remaining."
+        assert lines[0] == "Credit balance: 12,345 credits remaining."
         assert "Plan: pro" in lines
         assert "Expires: 2026-12-31" in lines
 

@@ -113,7 +113,7 @@
 **As an** MCP user, **I want** to call `get_credit_balance`, **so that** I can confirm I have enough credits before running a long TTS synthesis.
 
 **Acceptance Criteria:**
-- [ ] Given `get_credit_balance()` is called with a valid API key, when the tool completes, then `Credit balance: {N} chars remaining.` is returned.
+- [ ] Given `get_credit_balance()` is called with a valid API key, when the tool completes, then `Credit balance: {N} credits remaining.` is returned.
 - [ ] Given the API returns plan name or expiry date, then these are appended on subsequent lines (`Plan: {name}`, `Expires: {date}`).
 - [ ] Given the API key is invalid, then the standard auth error is returned (FR-007 mapping).
 
@@ -190,7 +190,7 @@
 - **Priority:** Must
 - **Parameters:** None.
 - **Acceptance Criteria:**
-  - Returns `Credit balance: {N} chars remaining.`.
+  - Returns `Credit balance: {N} credits remaining.`.
   - If the API response includes plan name or expiry, append `Plan: {name}` / `Expires: {date}` on additional lines.
   - Maps API errors per FR-007.
 - **Dependencies:** FR-003.
