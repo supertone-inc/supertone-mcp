@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcp.types import AudioContent, TextContent
+
 from supertone_tts_mcp.exceptions import (
     SupertoneAuthError,
     SupertoneConnectionError,
@@ -17,9 +18,13 @@ from supertone_tts_mcp.models import TTSResponse, VoiceInfo
 from supertone_tts_mcp.tools import (
     _autoplay,
     calculate_duration,
+    format_credit_balance,
     format_tts_metadata,
     format_tts_response,
+    format_voice_detail,
     format_voice_list,
+    get_credit_balance,
+    get_voice,
     resolve_api_key,
     resolve_autoplay,
     resolve_output_dir,
@@ -1232,5 +1237,558 @@ class TestSearchVoiceHandler:
             inst.aclose = AsyncMock()
 
             await search_voice()
+
+        inst.aclose.assert_awaited_once()
+
+
+# --- ISSUE-016: format_voice_detail / format_credit_balance / handlers ---
+
+
+def _make_voice_detail(
+    *,
+    voice_id: str = "v1",
+    name: str = "Sujin",
+    description: str | None = "A warm, professional female voice.",
+    age: str | None = "young_adult",
+    gender: str | None = "female",
+    use_cases: list[str] | None = None,
+    use_case: str | None = None,
+    supported_languages: list[str] | None = None,
+    styles: list[str] | None = None,
+    models: list[str] | None = None,
+    samples: list | None = None,
+    thumbnail_image_url: str | None = "https://cdn.example.com/v1.png",
+):
+    """Build a VoiceDetailDict-shaped dict for tests.
+
+    All optional/nullable fields are typed explicitly per RL-005 so callers
+    can pass `None` to exercise null-handling branches without type errors.
+    """
+    detail: dict = {
+        "voice_id": voice_id,
+        "name": name,
+    }
+    if description is not None:
+        detail["description"] = description
+    if age is not None:
+        detail["age"] = age
+    if gender is not None:
+        detail["gender"] = gender
+    if use_cases is not None:
+        detail["use_cases"] = use_cases
+    if use_case is not None:
+        detail["use_case"] = use_case
+    if supported_languages is not None:
+        detail["supported_languages"] = supported_languages
+    if styles is not None:
+        detail["styles"] = styles
+    if models is not None:
+        detail["models"] = models
+    if samples is not None:
+        detail["samples"] = samples
+    if thumbnail_image_url is not None:
+        detail["thumbnail_image_url"] = thumbnail_image_url
+    return detail
+
+
+def _make_credit_balance(*, balance: float | None = 12345.0):
+    """Build a CreditBalanceDict-shaped dict for tests (per RL-005)."""
+    return {"balance": balance}
+
+
+class TestFormatVoiceDetail:
+    """Pure formatter — no I/O — for VoiceDetailDict (ISSUE-016 AC #1)."""
+
+    def test_renders_all_fields(self):
+        detail = _make_voice_detail(
+            use_cases=["narration", "advertisement"],
+            supported_languages=["ko", "en"],
+            styles=["neutral", "happy", "sad"],
+            models=["sona_speech_1"],
+            samples=[{"x": 1}, {"x": 2}, {"x": 3}],
+        )
+        result = format_voice_detail(detail)
+        # Required fields rendered as labeled lines
+        assert "Voice ID: v1" in result
+        assert "Name: Sujin" in result
+        assert "Description: A warm, professional female voice." in result
+        assert "Age: young_adult" in result
+        assert "Gender: female" in result
+        # Joined list fields
+        assert "Use cases: narration, advertisement" in result
+        assert "Languages: ko, en" in result
+        assert "Styles: neutral, happy, sad" in result
+        assert "Models: sona_speech_1" in result
+        # Sample COUNT, not URLs (URLs are preview_voice's domain)
+        assert "Samples: 3" in result
+        # No sample URLs leaked into the formatter output
+        assert "https://" not in result.split("Thumbnail:")[0]
+        # Thumbnail rendered when present
+        assert "Thumbnail: https://cdn.example.com/v1.png" in result
+        # Hint about preview_voice
+        assert "preview_voice" in result
+
+    def test_omits_thumbnail_when_missing(self):
+        detail = _make_voice_detail(
+            thumbnail_image_url=None,
+            samples=[],
+            use_cases=["narration"],
+            supported_languages=["ko"],
+            styles=["neutral"],
+            models=["sona_speech_1"],
+        )
+        result = format_voice_detail(detail)
+        assert "Thumbnail" not in result
+        # Zero samples is still expressed (sanity)
+        assert "Samples: 0" in result
+
+    def test_zero_samples_when_field_missing(self):
+        """`samples` may be absent entirely (NotRequired)."""
+        detail = _make_voice_detail(
+            samples=None,
+            use_cases=["narration"],
+            supported_languages=["ko"],
+            styles=["neutral"],
+            models=["sona_speech_1"],
+        )
+        result = format_voice_detail(detail)
+        assert "Samples: 0" in result
+
+    def test_falls_back_to_singular_use_case(self):
+        """Some SDK payloads expose only `use_case` (singular)."""
+        detail = _make_voice_detail(
+            use_cases=None,
+            use_case="narration",
+            supported_languages=["ko"],
+            styles=["neutral"],
+            models=["sona_speech_1"],
+            samples=[],
+        )
+        result = format_voice_detail(detail)
+        assert "Use cases: narration" in result
+
+    def test_collapses_missing_optional_strings_to_dash(self):
+        detail = _make_voice_detail(
+            description=None,
+            age=None,
+            gender=None,
+            use_cases=None,
+            use_case=None,
+            supported_languages=None,
+            styles=None,
+            models=None,
+            samples=None,
+            thumbnail_image_url=None,
+        )
+        result = format_voice_detail(detail)
+        assert "Description: -" in result
+        assert "Age: -" in result
+        assert "Gender: -" in result
+        assert "Use cases: -" in result
+        assert "Languages: -" in result
+        assert "Styles: -" in result
+        assert "Models: -" in result
+        assert "Samples: 0" in result
+        assert "Thumbnail" not in result
+
+    def test_does_not_leak_sample_urls(self):
+        """Per AC: sample URLs must not appear in this formatter's output."""
+        detail = _make_voice_detail(
+            samples=[
+                {
+                    "language": "ko",
+                    "style": "happy",
+                    "model": "sona_speech_1",
+                    "url": "https://cdn.example.com/sujin-happy.wav",
+                }
+            ],
+            supported_languages=["ko"],
+            styles=["happy"],
+            models=["sona_speech_1"],
+            use_cases=["narration"],
+        )
+        result = format_voice_detail(detail)
+        # The thumbnail URL is allowed but the sample URL must not appear.
+        assert "sujin-happy.wav" not in result
+
+
+class TestFormatCreditBalance:
+    """Pure formatter — no I/O — for CreditBalanceDict (ISSUE-016 AC #4)."""
+
+    def test_renders_integer_balance_with_thousands_separator(self):
+        result = format_credit_balance(_make_credit_balance(balance=12345.0))
+        # UX spec single-line canonical form
+        assert result == "Credit balance: 12,345 chars remaining."
+
+    def test_renders_large_balance(self):
+        result = format_credit_balance(_make_credit_balance(balance=1_234_567.0))
+        assert "1,234,567 chars" in result
+
+    def test_renders_fractional_balance(self):
+        result = format_credit_balance(_make_credit_balance(balance=12345.5))
+        assert "12,345.50" in result or "12,345.5" in result
+
+    def test_renders_none_balance_as_unknown(self):
+        result = format_credit_balance(_make_credit_balance(balance=None))
+        assert "unknown" in result
+        assert "chars remaining" in result
+
+    def test_renders_optional_plan_and_expiry_when_present(self):
+        """Forward-compat path: SDK may add plan/expires_at."""
+        payload: dict = {
+            "balance": 12345.0,
+            "plan": "pro",
+            "expires_at": "2026-12-31",
+        }
+        result = format_credit_balance(payload)
+        lines = result.splitlines()
+        assert lines[0] == "Credit balance: 12,345 chars remaining."
+        assert "Plan: pro" in lines
+        assert "Expires: 2026-12-31" in lines
+
+
+class TestGetVoiceHandler:
+    """Tests for the `get_voice(voice_id)` handler."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_returns_formatted_detail(self):
+        """AC #1: returns voice_id, name, description, age, gender, use_cases,
+        languages, styles, models, and sample count."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        detail = _make_voice_detail(
+            voice_id="v1",
+            name="Sujin",
+            use_cases=["narration"],
+            supported_languages=["ko", "en"],
+            styles=["neutral", "happy"],
+            models=["sona_speech_1"],
+            samples=[{"x": 1}, {"x": 2}],
+        )
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(return_value=detail)
+            inst.aclose = AsyncMock()
+
+            result = await get_voice("v1")
+
+        inst.get_voice.assert_called_once_with(voice_id="v1")
+        assert "Voice ID: v1" in result
+        assert "Name: Sujin" in result
+        assert "Description:" in result
+        assert "Age:" in result
+        assert "Gender:" in result
+        assert "Use cases: narration" in result
+        assert "Languages: ko, en" in result
+        assert "Styles: neutral, happy" in result
+        assert "Models: sona_speech_1" in result
+        assert "Samples: 2" in result
+
+    @pytest.mark.asyncio
+    async def test_empty_voice_id_returns_validation_error_without_api_call(self):
+        """AC #2: empty voice_id is rejected before any API call."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await get_voice("")
+
+        assert "voice_id must not be empty" in result
+        # No SDK or constructor call
+        MC.assert_not_called()
+        inst.get_voice.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_whitespace_voice_id_returns_validation_error_without_api_call(self):
+        """AC #2: whitespace-only voice_id is rejected before any API call."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await get_voice("   ")
+
+        assert "voice_id must not be empty" in result
+        MC.assert_not_called()
+        inst.get_voice.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_auth_error_returns_formatted_string(self):
+        """AC #3: SupertoneAuthError -> auth error string."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(side_effect=SupertoneAuthError())
+            inst.aclose = AsyncMock()
+
+            result = await get_voice("v1")
+
+        assert result == "Authentication failed. Please verify your SUPERTONE_API_KEY."
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_error_returns_formatted_string(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(side_effect=SupertoneRateLimitError())
+            inst.aclose = AsyncMock()
+
+            result = await get_voice("v1")
+
+        assert "Rate limit exceeded" in result
+
+    @pytest.mark.asyncio
+    async def test_server_error_returns_formatted_string(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(side_effect=SupertoneServerError(503))
+            inst.aclose = AsyncMock()
+
+            result = await get_voice("v1")
+
+        assert "server error (503)" in result
+
+    @pytest.mark.asyncio
+    async def test_connection_error_returns_formatted_string(self):
+        """Per RL-002: each handler must cover the connection-error branch."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(side_effect=SupertoneConnectionError())
+            inst.aclose = AsyncMock()
+
+            result = await get_voice("v1")
+
+        assert "Failed to connect" in result
+
+    @pytest.mark.asyncio
+    async def test_missing_api_key_returns_error_without_api_call(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("supertone_tts_mcp.tools.SupertoneClient") as MC:
+                result = await get_voice("v1")
+                MC.assert_not_called()
+        assert "SUPERTONE_API_KEY" in result
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_success(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        detail = _make_voice_detail(
+            use_cases=["narration"],
+            supported_languages=["ko"],
+            styles=["neutral"],
+            models=["sona_speech_1"],
+        )
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(return_value=detail)
+            inst.aclose = AsyncMock()
+
+            await get_voice("v1")
+
+        inst.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_error(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(side_effect=SupertoneConnectionError())
+            inst.aclose = AsyncMock()
+
+            await get_voice("v1")
+
+        inst.aclose.assert_awaited_once()
+
+
+class TestGetCreditBalanceHandler:
+    """Tests for the `get_credit_balance()` handler (ISSUE-016 AC #4)."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_returns_formatted_balance(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_credit_balance = AsyncMock(
+                return_value=_make_credit_balance(balance=12345.0)
+            )
+            inst.aclose = AsyncMock()
+
+            result = await get_credit_balance()
+
+        inst.get_credit_balance.assert_called_once_with()
+        # Single-line canonical form
+        assert result == "Credit balance: 12,345 chars remaining."
+
+    @pytest.mark.asyncio
+    async def test_happy_path_with_plan_and_expiry(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        payload = {
+            "balance": 12345.0,
+            "plan": "pro",
+            "expires_at": "2026-12-31",
+        }
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_credit_balance = AsyncMock(return_value=payload)
+            inst.aclose = AsyncMock()
+
+            result = await get_credit_balance()
+
+        lines = result.splitlines()
+        assert lines[0] == "Credit balance: 12,345 chars remaining."
+        assert "Plan: pro" in lines
+        assert "Expires: 2026-12-31" in lines
+
+    @pytest.mark.asyncio
+    async def test_none_balance_renders_unknown(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_credit_balance = AsyncMock(
+                return_value=_make_credit_balance(balance=None)
+            )
+            inst.aclose = AsyncMock()
+
+            result = await get_credit_balance()
+
+        assert "unknown" in result
+
+    @pytest.mark.asyncio
+    async def test_auth_error_returns_formatted_string(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_credit_balance = AsyncMock(side_effect=SupertoneAuthError())
+            inst.aclose = AsyncMock()
+
+            result = await get_credit_balance()
+
+        assert result == "Authentication failed. Please verify your SUPERTONE_API_KEY."
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_error_returns_formatted_string(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_credit_balance = AsyncMock(side_effect=SupertoneRateLimitError())
+            inst.aclose = AsyncMock()
+
+            result = await get_credit_balance()
+
+        assert "Rate limit exceeded" in result
+
+    @pytest.mark.asyncio
+    async def test_server_error_returns_formatted_string(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_credit_balance = AsyncMock(side_effect=SupertoneServerError(502))
+            inst.aclose = AsyncMock()
+
+            result = await get_credit_balance()
+
+        assert "server error (502)" in result
+
+    @pytest.mark.asyncio
+    async def test_connection_error_returns_formatted_string(self):
+        """Per RL-002: each handler must cover the connection-error branch."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_credit_balance = AsyncMock(side_effect=SupertoneConnectionError())
+            inst.aclose = AsyncMock()
+
+            result = await get_credit_balance()
+
+        assert "Failed to connect" in result
+
+    @pytest.mark.asyncio
+    async def test_missing_api_key_returns_error_without_api_call(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("supertone_tts_mcp.tools.SupertoneClient") as MC:
+                result = await get_credit_balance()
+                MC.assert_not_called()
+        assert "SUPERTONE_API_KEY" in result
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_success(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_credit_balance = AsyncMock(
+                return_value=_make_credit_balance(balance=12345.0)
+            )
+            inst.aclose = AsyncMock()
+
+            await get_credit_balance()
+
+        inst.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_error(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_credit_balance = AsyncMock(side_effect=SupertoneConnectionError())
+            inst.aclose = AsyncMock()
+
+            await get_credit_balance()
 
         inst.aclose.assert_awaited_once()
