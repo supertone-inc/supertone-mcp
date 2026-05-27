@@ -38,8 +38,22 @@ from supertone_tts_mcp.exceptions import (
     SupertoneRateLimitError,
     SupertoneServerError,
 )
-from supertone_tts_mcp.models import TTSResponse, VoiceInfo, generate_output_path
+from supertone_tts_mcp.models import (
+    CreditBalanceDict,
+    TTSResponse,
+    VoiceDetailDict,
+    VoiceInfo,
+    generate_output_path,
+)
 from supertone_tts_mcp.supertone_client import SupertoneClient
+
+
+def _format_int_with_commas(value: int | float) -> str:
+    """Format a numeric value with thousands separators (e.g., 12345 -> 12,345)."""
+    if isinstance(value, float) and not value.is_integer():
+        return f"{value:,.2f}"
+    return f"{int(value):,}"
+
 
 # --- Input Validation ---
 
@@ -530,3 +544,162 @@ async def search_voice(
     }
 
     return format_voice_list(voices, filters=filters)
+
+
+# --- get_voice / get_credit_balance (ISSUE-016) ---
+
+
+def format_voice_detail(detail: VoiceDetailDict) -> str:
+    """Format a `VoiceDetailDict` as a multi-line plain-text response.
+
+    Per UX spec §4.4, sample audio URLs are intentionally NOT rendered here —
+    that surface belongs to `preview_voice` (ISSUE-017). We only expose the
+    sample COUNT.
+
+    Optional fields (per `VoiceDetailDict`) are rendered with sensible
+    fallbacks: missing strings collapse to "-", missing list fields render
+    as an empty joined value. Required fields are accessed directly.
+    """
+    voice_id = detail["voice_id"]
+    name = detail["name"]
+    description = detail.get("description") or "-"
+    age = detail.get("age") or "-"
+    gender = detail.get("gender") or "-"
+
+    use_cases_list = detail.get("use_cases") or []
+    # Some SDK payloads only populate the singular `use_case` field; fall back.
+    if not use_cases_list and detail.get("use_case"):
+        use_cases_list = [detail["use_case"]]
+    use_cases_str = ", ".join(use_cases_list) if use_cases_list else "-"
+
+    languages = detail.get("supported_languages") or []
+    languages_str = ", ".join(languages) if languages else "-"
+
+    styles = detail.get("styles") or []
+    styles_str = ", ".join(styles) if styles else "-"
+
+    models = detail.get("models") or []
+    models_str = ", ".join(models) if models else "-"
+
+    samples = detail.get("samples")
+    sample_count = len(samples) if samples is not None else 0
+
+    lines = [
+        f"Voice ID: {voice_id}",
+        f"Name: {name}",
+        f"Description: {description}",
+        f"Age: {age}",
+        f"Gender: {gender}",
+        f"Use cases: {use_cases_str}",
+        f"Languages: {languages_str}",
+        f"Styles: {styles_str}",
+        f"Models: {models_str}",
+        f"Samples: {sample_count}",
+    ]
+
+    thumbnail = detail.get("thumbnail_image_url")
+    if thumbnail:
+        lines.append(f"Thumbnail: {thumbnail}")
+
+    lines.append("")
+    lines.append("Use preview_voice to fetch sample URLs.")
+    return "\n".join(lines)
+
+
+def format_credit_balance(balance: CreditBalanceDict) -> str:
+    """Format a `CreditBalanceDict` as a single-line plain-text response.
+
+    Per UX spec §4.5, the canonical line is:
+      `Credit balance: 12,345 chars remaining.`
+
+    The SDK schema currently exposes only `balance` (nullable float). If the
+    upstream payload one day grows `plan` / `expires_at` fields (the spec
+    leaves room for them), we render them on subsequent lines without
+    breaking the single-line guarantee for the minimal case. `balance=None`
+    is treated as unknown.
+    """
+    raw_balance = balance.get("balance")
+    if raw_balance is None:
+        balance_str = "unknown"
+    else:
+        balance_str = _format_int_with_commas(raw_balance)
+
+    lines = [f"Credit balance: {balance_str} chars remaining."]
+
+    # Forward-compat: render optional `plan` / `expires_at` if the SDK starts
+    # returning them. The current TypedDict only declares `balance`, so use
+    # `.get(...)` against the runtime dict — TypedDicts ARE dicts at runtime,
+    # so this is safe without an isinstance ladder.
+    plan = balance.get("plan")  # type: ignore[typeddict-item]
+    if plan:
+        lines.append(f"Plan: {plan}")
+    expires = balance.get("expires_at")  # type: ignore[typeddict-item]
+    if expires:
+        lines.append(f"Expires: {expires}")
+
+    return "\n".join(lines)
+
+
+async def get_voice(voice_id: str) -> str:
+    """Return formatted detail for a single voice by ID.
+
+    Validates that `voice_id` is a non-empty (post-strip) string before
+    issuing any API call. Errors from the SDK are mapped to the same
+    plain-text strings used elsewhere in this module.
+    """
+    # Fail-fast input validation — no API call when voice_id is empty/whitespace.
+    if not isinstance(voice_id, str) or not voice_id.strip():
+        return "voice_id must not be empty."
+
+    try:
+        api_key = resolve_api_key()
+    except ValueError as e:
+        return str(e)
+
+    client = SupertoneClient(api_key=api_key)
+    try:
+        detail = await client.get_voice(voice_id=voice_id)
+    except SupertoneAuthError:
+        return "Authentication failed. Please verify your SUPERTONE_API_KEY."
+    except SupertoneRateLimitError:
+        return "Rate limit exceeded. Please wait and try again."
+    except SupertoneServerError as e:
+        return f"Supertone API server error ({e.status_code}). Please try again later."
+    except SupertoneConnectionError:
+        return (
+            "Failed to connect to Supertone API. Please check your network connection."
+        )
+    finally:
+        await client.aclose()
+
+    return format_voice_detail(detail)
+
+
+async def get_credit_balance() -> str:
+    """Return the formatted current credit balance for the API key.
+
+    No input parameters. Errors from the SDK are mapped to the same plain
+    text strings used elsewhere in this module.
+    """
+    try:
+        api_key = resolve_api_key()
+    except ValueError as e:
+        return str(e)
+
+    client = SupertoneClient(api_key=api_key)
+    try:
+        balance = await client.get_credit_balance()
+    except SupertoneAuthError:
+        return "Authentication failed. Please verify your SUPERTONE_API_KEY."
+    except SupertoneRateLimitError:
+        return "Rate limit exceeded. Please wait and try again."
+    except SupertoneServerError as e:
+        return f"Supertone API server error ({e.status_code}). Please try again later."
+    except SupertoneConnectionError:
+        return (
+            "Failed to connect to Supertone API. Please check your network connection."
+        )
+    finally:
+        await client.aclose()
+
+    return format_credit_balance(balance)

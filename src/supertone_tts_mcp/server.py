@@ -113,6 +113,37 @@ async def search_voice(
     )
 
 
+@mcp.tool(
+    name="get_voice",
+    description=(
+        "Fetch full detail for a single voice by voice_id. "
+        "Returns name, description, age, gender, use_cases, languages, "
+        "styles, supported models, sample count, and thumbnail URL. "
+        "Use preview_voice to get the actual sample audio URLs."
+    ),
+)
+async def get_voice(voice_id: str) -> str:
+    """Fetch full detail for a single voice by voice_id.
+
+    Args:
+        voice_id: Voice identifier returned by search_voice. Required.
+    """
+    return await tools.get_voice(voice_id=voice_id)
+
+
+@mcp.tool(
+    name="get_credit_balance",
+    description=(
+        "Returns the remaining Supertone credit balance for the current "
+        "API key. Use this before long TTS calls to confirm you have enough "
+        "characters left."
+    ),
+)
+async def get_credit_balance() -> str:
+    """Return the remaining Supertone credit balance for the current API key."""
+    return await tools.get_credit_balance()
+
+
 def main() -> None:
     """Start the Supertone TTS MCP server."""
     mcp.run(transport="stdio")
