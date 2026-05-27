@@ -27,7 +27,7 @@
 | ISSUE-016 | Add `get_voice` + `get_credit_balance` tools | P1 | 0.5d | ISSUE-014 | backlog |
 | ISSUE-017 | Add `preview_voice` tool (returns sample URLs) | P1 | 0.5d | ISSUE-014, ISSUE-016 | done |
 | ISSUE-018 | Add `predict_duration` tool (client + handler) | P1 | 0.5d | ISSUE-014 | done |
-| ISSUE-019 | Add `clone_voice` tool (single file ≤3MB) | P1 | 1d | ISSUE-014 | backlog |
+| ISSUE-019 | Add `clone_voice` tool (single file ≤3MB) | P1 | 1d | ISSUE-014 | done |
 | ISSUE-020 | Custom voice CRUD tools (search/edit/delete) | P1 | 1d | ISSUE-019 | backlog |
 
 ---
@@ -916,11 +916,11 @@ Revert client method, tool handler, server registration, and tests.
 - PRD-Ref: FR-017, US-011
 - Priority: P1
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Branch: feat/ISSUE-019-clone-voice
+- GH-Issue: #21
+- PR: #22
 - Depends-On: ISSUE-014
 
 #### Goal
