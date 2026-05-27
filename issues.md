@@ -973,11 +973,11 @@ Revert client method, tool handler, validators, constants, server registration, 
 - PRD-Ref: FR-018, FR-019, US-011
 - Priority: P1
 - Estimate: 1d
-- Status: backlog
-- Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Status: done
+- Owner: claude
+- Branch: feat/ISSUE-020-custom-voice-crud
+- GH-Issue: 24
+- PR: 23
 - Depends-On: ISSUE-019
 
 #### Goal

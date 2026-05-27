@@ -2,9 +2,9 @@
 
 ## Meta
 - Started: 2026-05-27
-- Iteration: 7 / 20
+- Iteration: 8 / 20
 - Parallel: 1 (serialized — ISSUE-015/016/018/019 all touch tools.py and server.py)
-- Status: running
+- Status: completed
 - Scope: v0.2 autonomous phase — ISSUE-015~020 (ISSUE-011 marked Manual, excluded)
 
 ## Issue Progress
@@ -17,7 +17,7 @@
 | ISSUE-017 | done | 1 | - | shipped | #18 (merged 61be53e) |
 | ISSUE-018 | done | 1 | - | shipped | #20 (merged 86d7f49) |
 | ISSUE-019 | done | 1 | - | shipped | #22 (merged 1f3c479) |
-| ISSUE-020 | backlog | 0 | - | backlog | - |
+| ISSUE-020 | done | 1 | - | shipped | #23 (merged b083e22) |
 
 ## Discovered Issues
 - (none — no Critical/High findings during implement or review for this docs-only change)
@@ -43,3 +43,4 @@
 - ISSUE-017 PR #18 merged at commit 61be53e. Smoke test on main: 267/267 passing. `preview_voice` tool registered with `voice_id` required + `language/style/model` optional filters; output matches UX spec §4.6 exact format. RL-001 fix-along applied to `VoiceDetailDict` (default-required + `NotRequired` on `samples`/`thumbnail_image_url`); pyright now shows 0 errors on `models.py` and PR #16's `format_voice_detail` type errors at `tools.py:563/564/572` are resolved. Remaining 5 pyright errors on `tools.py` are unchanged ISSUE-012-era tech debt. RL-006 (404 mapping) still applies to `preview_voice` — explicitly out of scope per task instruction.
 - ISSUE-019 PR #22 merged at commit 1f3c479. Smoke test on main: 351/351 passing. `clone_voice` tool registered with `name` + `audio_path` required + `description` optional. SDK wrapper `create_cloned_voice` follows RL-002 symmetric error coverage. RL-004 frequency bumped 2 → 3 (10th wrapped method; +1 pyright error on `supertone_client.py:468`). UX-spec §4.8 wording diverges from issue AC (issue wording took priority); docs-only follow-up recommended.
 - ISSUE-018 PR #20 merged at commit 86d7f49. Smoke test on main: 307/307 passing. `predict_duration` tool registered with `text` required + all `text_to_speech`-style params optional; schema-parity test (`assert tts_props == pd_props`) pins the AC #6 "same parameter schema" clause. RL-002 (symmetric connection-error testing) verified on both layers — SDK wrapper exercises NoResponseError + httpx.ConnectError + httpx.TimeoutException; handler exercises SupertoneConnectionError + aclose on success/failure. RL-005 satisfied: `_make_predict_duration_response(duration: float | None = 2.34)`. Review-fix commit `d7a5b84` hoisted a function-local `TEXT_MAX_LENGTH` import to module-top (ruff PLC0415). Pyright delta vs. baseline 153123e: +1 error on `supertone_client.py:425` — same RL-004 pattern; **RL-004 frequency bumped 1 → 2**, justifying a dedicated tech-debt issue. Pre-existing `tools.py` (5 errors) and `supertone_client.py` (22 prior errors) unchanged.
+- ISSUE-020 PR #23 merged at commit b083e22. Smoke test on main: 434/434 passing. search_custom_voice / edit_custom_voice / delete_custom_voice registered; RL-002 + RL-003 fully exercised; RL-004 frequency 3->4 (5 new pyright errors all in new wrappers); RL-006 still open for both new handlers; UX-spec §4.9 "Created" line + architecture.md pagination note are docs-drift candidates. V0.2 SPRINT COMPLETE: ISSUE-013 -> ISSUE-020 all shipped (8 of 8 in-scope issues).
