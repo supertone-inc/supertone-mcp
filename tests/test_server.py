@@ -179,6 +179,53 @@ class TestToolRegistration:
         props = schema.get("properties", {})
         assert props == {} or props is None
 
+    # --- ISSUE-017: preview_voice schema + description ---
+
+    def test_preview_voice_tool_exists(self):
+        """ISSUE-017 AC: preview_voice is registered."""
+        tools = mcp._tool_manager._tools
+        assert "preview_voice" in tools
+
+    def test_preview_voice_description_matches_ux_spec(self):
+        """Description must reflect docs/ux_spec.md §2.6."""
+        tool = mcp._tool_manager._tools["preview_voice"]
+        desc = tool.description
+        # Core wording from the UX spec
+        assert "sample audio URLs" in desc
+        assert "voice" in desc.lower()
+        # Documents the optional filters
+        for kw in ("language", "style", "model"):
+            assert kw in desc, f"missing keyword '{kw}' from preview_voice description"
+        # Documents the no-autoplay constraint
+        assert "NOT play" in desc or "not play" in desc
+
+    def test_preview_voice_has_voice_id_parameter(self):
+        tool = mcp._tool_manager._tools["preview_voice"]
+        schema = tool.parameters
+        assert "voice_id" in schema["properties"]
+
+    def test_preview_voice_voice_id_is_required(self):
+        """voice_id is the only REQUIRED param."""
+        tool = mcp._tool_manager._tools["preview_voice"]
+        schema = tool.parameters
+        assert "voice_id" in schema.get("required", [])
+
+    def test_preview_voice_filter_params_are_optional(self):
+        """language/style/model are all optional filters."""
+        tool = mcp._tool_manager._tools["preview_voice"]
+        schema = tool.parameters
+        required = schema.get("required", [])
+        for kw in ("language", "style", "model"):
+            assert kw not in required, f"{kw} should be optional"
+
+    def test_preview_voice_exposes_all_filter_params(self):
+        """All three filter params must be present in the JSON Schema."""
+        tool = mcp._tool_manager._tools["preview_voice"]
+        schema = tool.parameters
+        properties = schema["properties"]
+        for kw in ("language", "style", "model"):
+            assert kw in properties, f"{kw} missing from preview_voice schema"
+
 
 class TestMainFunction:
     def test_main_is_callable(self):
