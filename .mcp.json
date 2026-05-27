@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "supertone-tts": {
+      "command": "uvx",
+      "args": ["supertone-mcp"],
+      "env": {
+        "SUPERTONE_API_KEY": "${SUPERTONE_API_KEY}"
+      }
+    }
+  }
+}
