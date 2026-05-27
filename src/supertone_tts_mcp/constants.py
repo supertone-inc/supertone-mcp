@@ -99,3 +99,11 @@ VALID_OUTPUT_MODES: list[str] = [
 ]
 DEFAULT_OUTPUT_MODE: str = OUTPUT_MODE_FILES
 DEFAULT_AUTOPLAY: bool = True
+
+# --- ISSUE-019: clone_voice constraints ---
+# Per FR-017 / UX spec §2.8: WAV/MP3 only, exactly one file, ≤3MB.
+MAX_AUDIO_FILE_BYTES: int = 3 * 1024 * 1024
+SUPPORTED_CLONE_FORMATS: dict[str, str] = {
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+}

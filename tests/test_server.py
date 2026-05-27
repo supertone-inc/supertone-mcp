@@ -289,6 +289,62 @@ class TestToolRegistration:
         ):
             assert kw not in required, f"{kw} should be optional"
 
+    # --- ISSUE-019: clone_voice schema + description ---
+
+    def test_clone_voice_tool_exists(self):
+        """ISSUE-019 AC #7: clone_voice is registered."""
+        tools = mcp._tool_manager._tools
+        assert "clone_voice" in tools
+
+    def test_clone_voice_description_matches_ux_spec(self):
+        """Description must reflect docs/ux_spec.md §2.8."""
+        tool = mcp._tool_manager._tools["clone_voice"]
+        desc = tool.description
+        # Core wording from the UX spec
+        assert "custom voice" in desc.lower()
+        assert "WAV" in desc
+        assert "MP3" in desc
+        # Size constraint must be documented
+        assert "3MB" in desc or "3 MB" in desc
+        # Single-file constraint must be documented
+        assert "one" in desc.lower() or "single" in desc.lower()
+        # Mentions how the new voice can be used
+        assert "text_to_speech" in desc
+
+    def test_clone_voice_has_name_parameter(self):
+        tool = mcp._tool_manager._tools["clone_voice"]
+        schema = tool.parameters
+        assert "name" in schema["properties"]
+
+    def test_clone_voice_has_audio_path_parameter(self):
+        tool = mcp._tool_manager._tools["clone_voice"]
+        schema = tool.parameters
+        assert "audio_path" in schema["properties"]
+
+    def test_clone_voice_has_description_parameter(self):
+        tool = mcp._tool_manager._tools["clone_voice"]
+        schema = tool.parameters
+        assert "description" in schema["properties"]
+
+    def test_clone_voice_name_is_required(self):
+        """AC #7: name is required."""
+        tool = mcp._tool_manager._tools["clone_voice"]
+        schema = tool.parameters
+        assert "name" in schema.get("required", [])
+
+    def test_clone_voice_audio_path_is_required(self):
+        """AC #7: audio_path is required."""
+        tool = mcp._tool_manager._tools["clone_voice"]
+        schema = tool.parameters
+        assert "audio_path" in schema.get("required", [])
+
+    def test_clone_voice_description_is_optional(self):
+        """AC #7: description is optional."""
+        tool = mcp._tool_manager._tools["clone_voice"]
+        schema = tool.parameters
+        required = schema.get("required", [])
+        assert "description" not in required
+
 
 class TestMainFunction:
     def test_main_is_callable(self):

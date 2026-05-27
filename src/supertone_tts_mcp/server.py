@@ -224,6 +224,35 @@ async def predict_duration(
     )
 
 
+@mcp.tool(
+    name="clone_voice",
+    description=(
+        "Create a custom voice from a single local audio file. "
+        "Constraints: WAV or MP3 only, max 3MB, exactly one file. "
+        "The returned voice_id can be used immediately in text_to_speech. "
+        'Path supports ~ expansion (e.g., "~/sample.wav").'
+    ),
+)
+async def clone_voice(
+    name: str,
+    audio_path: str,
+    description: str | None = None,
+) -> str:
+    """Create a custom (cloned) voice from a local audio file.
+
+    Args:
+        name: Display name for the new voice. Required, non-empty.
+        audio_path: Absolute or ~-prefixed local path to a WAV or MP3 file
+            (≤ 3MB). Required.
+        description: Optional note/description for the new voice.
+    """
+    return await tools.clone_voice(
+        name=name,
+        audio_path=audio_path,
+        description=description,
+    )
+
+
 def main() -> None:
     """Start the Supertone TTS MCP server."""
     mcp.run(transport="stdio")
