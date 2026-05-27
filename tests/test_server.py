@@ -15,22 +15,45 @@ class TestToolRegistration:
         tools = mcp._tool_manager._tools
         assert "text_to_speech" in tools
 
-    def test_list_voices_tool_exists(self):
+    def test_search_voice_tool_exists(self):
         tools = mcp._tool_manager._tools
-        assert "list_voices" in tools
+        assert "search_voice" in tools
+
+    def test_list_voices_tool_removed(self):
+        """v0.2 breaking change: list_voices is removed (ISSUE-015)."""
+        tools = mcp._tool_manager._tools
+        assert "list_voices" not in tools
 
     def test_text_to_speech_description(self):
         tool = mcp._tool_manager._tools["text_to_speech"]
         desc = tool.description
         assert "speech" in desc
-        assert "list_voices" in desc
+        # text_to_speech description should refer to search_voice (not list_voices)
+        assert "search_voice" in desc
+        assert "list_voices" not in desc
         assert "23 languages" in desc
 
-    def test_list_voices_description(self):
-        tool = mcp._tool_manager._tools["list_voices"]
+    def test_search_voice_description_matches_ux_spec(self):
+        """Description must follow docs/ux_spec.md §2.3 wording."""
+        tool = mcp._tool_manager._tools["search_voice"]
         desc = tool.description
-        assert "voice" in desc.lower()
-        assert "text_to_speech" in desc or "text-to-speech" in desc
+        # Core wording from the UX spec
+        assert "Search the Supertone voice catalog" in desc
+        assert "AND semantics" in desc
+        # Every filter parameter is enumerated in the description
+        for kw in (
+            "name",
+            "description",
+            "language",
+            "gender",
+            "age",
+            "use_case",
+            "style",
+            "model",
+        ):
+            assert kw in desc
+        # Behavior fallback documented
+        assert "Filters applied" in desc
 
     def test_text_to_speech_has_text_parameter(self):
         tool = mcp._tool_manager._tools["text_to_speech"]
@@ -47,11 +70,39 @@ class TestToolRegistration:
         schema = tool.parameters
         assert "model" in schema["properties"]
 
-    def test_list_voices_language_is_optional(self):
-        tool = mcp._tool_manager._tools["list_voices"]
+    def test_search_voice_all_filters_optional(self):
+        """search_voice must accept zero filters."""
+        tool = mcp._tool_manager._tools["search_voice"]
         schema = tool.parameters
         required = schema.get("required", [])
-        assert "language" not in required
+        for kw in (
+            "language",
+            "gender",
+            "age",
+            "use_case",
+            "style",
+            "model",
+            "name",
+            "description",
+        ):
+            assert kw not in required, f"{kw} should be optional"
+
+    def test_search_voice_exposes_all_filter_params(self):
+        """All eight filter params must be present in the JSON Schema."""
+        tool = mcp._tool_manager._tools["search_voice"]
+        schema = tool.parameters
+        properties = schema["properties"]
+        for kw in (
+            "language",
+            "gender",
+            "age",
+            "use_case",
+            "style",
+            "model",
+            "name",
+            "description",
+        ):
+            assert kw in properties, f"{kw} missing from search_voice schema"
 
 
 class TestMainFunction:

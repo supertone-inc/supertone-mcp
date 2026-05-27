@@ -18,7 +18,7 @@ mcp = FastMCP("supertone-tts")
         "Supports 23 languages including Korean, English, and Japanese. "
         "Audio is automatically played back on macOS. "
         "A default voice is already configured -- just call this tool directly. "
-        "Only call list_voices if the user explicitly asks to change or browse voices."
+        "Only call search_voice if the user explicitly asks to change or browse voices."
     ),
 )
 async def text_to_speech(
@@ -38,7 +38,7 @@ async def text_to_speech(
             Can be a sentence, paragraph, or any text content.
             Long text is automatically split and processed.
         voice_id: Voice to use (e.g., "sujin-01", "minho-01").
-            Run list_voices to browse available voices.
+            Run search_voice to browse available voices.
             If omitted, a default Korean voice is used.
         language: Language code for the speech output.
             "ko" (Korean, default), "en" (English), "ja" (Japanese),
@@ -53,7 +53,7 @@ async def text_to_speech(
             -24 (deeper) to +24 (higher). Default: 0.
         style: Emotion or tone of the voice (e.g., "neutral", "happy",
             "sad", "angry"). Available styles vary by voice --
-            call list_voices to see what each voice supports.
+            call search_voice to see what each voice supports.
     """
     return await tools.text_to_speech(
         text=text,
@@ -68,25 +68,49 @@ async def text_to_speech(
 
 
 @mcp.tool(
-    name="list_voices",
+    name="search_voice",
     description=(
-        "Browse available voices for text-to-speech. "
-        "Use this before text_to_speech to find the right voice. "
-        "Shows each voice's name, ID, supported languages, and emotion styles "
-        "(e.g., neutral, happy, sad, angry). "
-        "Use this when the user asks: what voices are available, "
-        "find a voice for a specific language, or pick a voice with a certain style."
+        "Search the Supertone voice catalog. "
+        "Filters are optional and combined with AND semantics: "
+        "name, description, language, gender, age, use_case, style, model. "
+        "With no filters, returns the full catalog "
+        "(the v0.1 list_voices behavior). "
+        "The output is a numbered plain-text list; when any filter is set, "
+        'the first line shows "Filters applied: ...".'
     ),
 )
-async def list_voices(language: str | None = None) -> str:
-    """Browse available voices for text-to-speech.
+async def search_voice(
+    language: str | None = None,
+    gender: str | None = None,
+    age: str | None = None,
+    use_case: str | None = None,
+    style: str | None = None,
+    model: str | None = None,
+    name: str | None = None,
+    description: str | None = None,
+) -> str:
+    """Search the Supertone voice catalog with optional filters.
 
     Args:
-        language: Filter by language code to narrow results
-            (e.g., "ko" for Korean voices, "en" for English, "ja" for Japanese).
-            If omitted, all voices across all languages are returned.
+        language: Language code (e.g., "ko", "en", "ja").
+        gender: Voice gender (e.g., "male", "female").
+        age: Age bracket (e.g., "young_adult", "child").
+        use_case: Single use case keyword (e.g., "narration", "advertisement").
+        style: Emotion style (e.g., "neutral", "happy").
+        model: TTS model identifier (e.g., "sona_speech_1").
+        name: Voice name (partial match).
+        description: Voice description (partial match).
     """
-    return await tools.list_voices(language=language)
+    return await tools.search_voice(
+        language=language,
+        gender=gender,
+        age=age,
+        use_case=use_case,
+        style=style,
+        model=model,
+        name=name,
+        description=description,
+    )
 
 
 def main() -> None:
