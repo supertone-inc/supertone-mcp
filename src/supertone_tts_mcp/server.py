@@ -144,6 +144,38 @@ async def get_credit_balance() -> str:
     return await tools.get_credit_balance()
 
 
+@mcp.tool(
+    name="preview_voice",
+    description=(
+        "Fetch sample audio URLs for a voice. "
+        "Optionally filter samples by language, style, and model. "
+        "Returns one URL per matching sample. "
+        "v0.2 does NOT play the audio locally; "
+        "pass the URL to your client to listen."
+    ),
+)
+async def preview_voice(
+    voice_id: str,
+    language: str | None = None,
+    style: str | None = None,
+    model: str | None = None,
+) -> str:
+    """Fetch sample audio URLs for a voice.
+
+    Args:
+        voice_id: Voice identifier. Required.
+        language: Filter samples by language code (e.g., "ko", "en", "ja").
+        style: Filter samples by emotion style (e.g., "neutral", "happy").
+        model: Filter samples by TTS model identifier (e.g., "sona_speech_1").
+    """
+    return await tools.preview_voice(
+        voice_id=voice_id,
+        language=language,
+        style=style,
+        model=model,
+    )
+
+
 def main() -> None:
     """Start the Supertone TTS MCP server."""
     mcp.run(transport="stdio")

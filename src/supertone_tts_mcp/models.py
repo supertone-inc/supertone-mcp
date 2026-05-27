@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 from uuid import uuid4
 
 
@@ -87,10 +87,15 @@ class SampleDict(TypedDict):
     url: str
 
 
-class VoiceDetailDict(TypedDict, total=False):
+class VoiceDetailDict(TypedDict):
     """Detailed voice entry (mirrors SDK `GetCharacterByIDResponse`).
 
-    `samples` and `thumbnail_image_url` are optional per the SDK schema.
+    Per RL-001: only `samples` and `thumbnail_image_url` are nullable in the
+    SDK schema. All other fields are required, so we default to `total=True`
+    and explicitly mark just those two as `NotRequired`. This restores type
+    safety for downstream consumers (`format_voice_detail`, `preview_voice`)
+    that read required fields without `.get()` guards.
+
     `language` from the SDK is exposed here as `supported_languages` for
     consistency with the existing `VoiceDict`.
     """
@@ -105,8 +110,8 @@ class VoiceDetailDict(TypedDict, total=False):
     supported_languages: list[str]
     styles: list[str]
     models: list[str]
-    samples: list[SampleDict]
-    thumbnail_image_url: str
+    samples: NotRequired[list[SampleDict]]
+    thumbnail_image_url: NotRequired[str]
 
 
 class CreditBalanceDict(TypedDict):

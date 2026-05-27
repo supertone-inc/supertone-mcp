@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcp.types import AudioContent, TextContent
-
 from supertone_tts_mcp.exceptions import (
     SupertoneAuthError,
     SupertoneConnectionError,
@@ -23,8 +22,10 @@ from supertone_tts_mcp.tools import (
     format_tts_response,
     format_voice_detail,
     format_voice_list,
+    format_voice_samples,
     get_credit_balance,
     get_voice,
+    preview_voice,
     resolve_api_key,
     resolve_autoplay,
     resolve_output_dir,
@@ -1790,5 +1791,573 @@ class TestGetCreditBalanceHandler:
             inst.aclose = AsyncMock()
 
             await get_credit_balance()
+
+        inst.aclose.assert_awaited_once()
+
+
+# --- ISSUE-017: format_voice_samples / preview_voice handler ---
+
+
+def _make_sample(
+    *,
+    language: str = "ko",
+    style: str = "neutral",
+    model: str = "sona_speech_1",
+    url: str = "https://cdn.example.com/sujin-neutral.wav",
+) -> dict:
+    """Build a SampleDict-shaped dict for tests."""
+    return {
+        "language": language,
+        "style": style,
+        "model": model,
+        "url": url,
+    }
+
+
+class TestFormatVoiceSamples:
+    """Pure formatter — no I/O — for the samples list (ISSUE-017 AC #1)."""
+
+    def test_renders_all_samples_with_no_filters(self):
+        """Given 4 samples and no filters, all 4 lines are rendered with metadata."""
+        samples = [
+            _make_sample(
+                language="ko",
+                style="neutral",
+                model="sona_speech_1",
+                url="https://cdn.example.com/s1.wav",
+            ),
+            _make_sample(
+                language="ko",
+                style="happy",
+                model="sona_speech_1",
+                url="https://cdn.example.com/s2.wav",
+            ),
+            _make_sample(
+                language="en",
+                style="neutral",
+                model="sona_speech_1",
+                url="https://cdn.example.com/s3.wav",
+            ),
+            _make_sample(
+                language="ja",
+                style="sad",
+                model="sona_speech_2",
+                url="https://cdn.example.com/s4.wav",
+            ),
+        ]
+        filters: dict[str, str | None] = {
+            "language": None,
+            "style": None,
+            "model": None,
+        }
+        out = format_voice_samples(samples, filters)
+        lines = out.splitlines()
+        assert len(lines) == 4
+        assert lines[0] == (
+            "1. [language=ko, style=neutral, model=sona_speech_1] "
+            "https://cdn.example.com/s1.wav"
+        )
+        assert lines[1].startswith("2. [language=ko, style=happy, model=sona_speech_1]")
+        assert lines[1].endswith("https://cdn.example.com/s2.wav")
+        assert lines[2].startswith(
+            "3. [language=en, style=neutral, model=sona_speech_1]"
+        )
+        assert lines[3].startswith("4. [language=ja, style=sad, model=sona_speech_2]")
+
+    def test_filter_by_language_only(self):
+        samples = [
+            _make_sample(language="ko", style="happy"),
+            _make_sample(language="en", style="happy"),
+            _make_sample(language="ko", style="neutral"),
+        ]
+        out = format_voice_samples(
+            samples, {"language": "ko", "style": None, "model": None}
+        )
+        lines = out.splitlines()
+        assert len(lines) == 2
+        assert all("language=ko" in line for line in lines)
+        assert "language=en" not in out
+
+    def test_filter_by_style_only(self):
+        samples = [
+            _make_sample(language="ko", style="happy"),
+            _make_sample(language="en", style="happy"),
+            _make_sample(language="ko", style="neutral"),
+        ]
+        out = format_voice_samples(
+            samples, {"language": None, "style": "happy", "model": None}
+        )
+        lines = out.splitlines()
+        assert len(lines) == 2
+        assert all("style=happy" in line for line in lines)
+
+    def test_filter_by_model_only(self):
+        samples = [
+            _make_sample(model="sona_speech_1"),
+            _make_sample(model="sona_speech_2"),
+            _make_sample(model="sona_speech_2_flash"),
+        ]
+        out = format_voice_samples(
+            samples, {"language": None, "style": None, "model": "sona_speech_2"}
+        )
+        lines = out.splitlines()
+        # Exact-match filter must NOT include sona_speech_2_flash.
+        assert len(lines) == 1
+        assert "model=sona_speech_2]" in lines[0]
+
+    def test_combined_filters_narrow_correctly(self):
+        samples = [
+            _make_sample(language="ko", style="happy", model="sona_speech_1"),
+            _make_sample(language="ko", style="neutral", model="sona_speech_1"),
+            _make_sample(language="en", style="happy", model="sona_speech_1"),
+            _make_sample(language="ko", style="happy", model="sona_speech_2"),
+        ]
+        out = format_voice_samples(
+            samples,
+            {"language": "ko", "style": "happy", "model": "sona_speech_1"},
+        )
+        lines = out.splitlines()
+        assert len(lines) == 1
+        assert "[language=ko, style=happy, model=sona_speech_1]" in lines[0]
+
+    def test_empty_samples_list_returns_no_preview_samples_message(self):
+        """AC #5: zero samples => 'no preview samples' message."""
+        out = format_voice_samples([], {"language": None, "style": None, "model": None})
+        assert out == "This voice has no preview samples."
+
+    def test_none_samples_returns_no_preview_samples_message(self):
+        """AC #5: samples=None => 'no preview samples' message."""
+        out = format_voice_samples(
+            None, {"language": None, "style": None, "model": None}
+        )
+        assert out == "This voice has no preview samples."
+
+    def test_no_match_returns_no_matching_samples_message(self):
+        """AC #4: samples exist but filters match none."""
+        samples = [
+            _make_sample(language="ko"),
+            _make_sample(language="en"),
+        ]
+        out = format_voice_samples(
+            samples, {"language": "ja", "style": None, "model": None}
+        )
+        assert out == "No matching samples for the given filters."
+
+    def test_numbering_resets_at_one_for_filtered_subset(self):
+        """Per UX spec: numbering is 1..N over the FILTERED list, not the full list."""
+        samples = [
+            _make_sample(language="en"),
+            _make_sample(language="ko", url="https://cdn.example.com/a.wav"),
+            _make_sample(language="ko", url="https://cdn.example.com/b.wav"),
+        ]
+        out = format_voice_samples(
+            samples, {"language": "ko", "style": None, "model": None}
+        )
+        lines = out.splitlines()
+        assert lines[0].startswith("1. ")
+        assert lines[1].startswith("2. ")
+
+
+class TestPreviewVoiceHandler:
+    """Tests for the `preview_voice(voice_id, ...)` handler."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_no_filters_returns_all_samples(self):
+        """AC #1: 4 samples + no filters => 4 sample lines."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        detail = _make_voice_detail(
+            voice_id="v1",
+            supported_languages=["ko", "en", "ja"],
+            styles=["neutral", "happy", "sad"],
+            models=["sona_speech_1", "sona_speech_2"],
+            use_cases=["narration"],
+            samples=[
+                _make_sample(
+                    language="ko",
+                    style="neutral",
+                    model="sona_speech_1",
+                    url="https://cdn.example.com/s1.wav",
+                ),
+                _make_sample(
+                    language="ko",
+                    style="happy",
+                    model="sona_speech_1",
+                    url="https://cdn.example.com/s2.wav",
+                ),
+                _make_sample(
+                    language="en",
+                    style="neutral",
+                    model="sona_speech_1",
+                    url="https://cdn.example.com/s3.wav",
+                ),
+                _make_sample(
+                    language="ja",
+                    style="sad",
+                    model="sona_speech_2",
+                    url="https://cdn.example.com/s4.wav",
+                ),
+            ],
+        )
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(return_value=detail)
+            inst.aclose = AsyncMock()
+
+            result = await preview_voice("v1")
+
+        inst.get_voice.assert_called_once_with(voice_id="v1")
+        lines = result.splitlines()
+        assert len(lines) == 4
+        for n in (1, 2, 3, 4):
+            assert any(line.startswith(f"{n}. [") for line in lines), (
+                f"missing line {n}: {result}"
+            )
+        # All URLs present
+        assert "s1.wav" in result
+        assert "s4.wav" in result
+
+    @pytest.mark.asyncio
+    async def test_filter_by_language_narrows_results(self):
+        """AC #2: language="ko" returns only Korean samples."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        detail = _make_voice_detail(
+            voice_id="v1",
+            supported_languages=["ko", "en"],
+            styles=["happy", "neutral"],
+            models=["sona_speech_1"],
+            use_cases=["narration"],
+            samples=[
+                _make_sample(language="ko", style="happy"),
+                _make_sample(language="en", style="happy"),
+                _make_sample(language="ko", style="neutral"),
+            ],
+        )
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(return_value=detail)
+            inst.aclose = AsyncMock()
+
+            result = await preview_voice("v1", language="ko")
+
+        lines = result.splitlines()
+        assert len(lines) == 2
+        assert "language=en" not in result
+        assert "language=ko" in result
+
+    @pytest.mark.asyncio
+    async def test_combined_filters_narrow_correctly(self):
+        """AC #3: language="ko", style="happy" => only matches both."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        detail = _make_voice_detail(
+            voice_id="v1",
+            supported_languages=["ko", "en"],
+            styles=["happy", "neutral"],
+            models=["sona_speech_1"],
+            use_cases=["narration"],
+            samples=[
+                _make_sample(
+                    language="ko",
+                    style="happy",
+                    url="https://cdn.example.com/match.wav",
+                ),
+                _make_sample(language="ko", style="neutral"),
+                _make_sample(language="en", style="happy"),
+            ],
+        )
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(return_value=detail)
+            inst.aclose = AsyncMock()
+
+            result = await preview_voice("v1", language="ko", style="happy")
+
+        lines = result.splitlines()
+        assert len(lines) == 1
+        assert "match.wav" in lines[0]
+        assert "[language=ko, style=happy, model=sona_speech_1]" in lines[0]
+
+    @pytest.mark.asyncio
+    async def test_filter_by_model_narrows(self):
+        """AC #2: model filter dimension narrows results."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        detail = _make_voice_detail(
+            voice_id="v1",
+            supported_languages=["ko"],
+            styles=["happy"],
+            models=["sona_speech_1", "sona_speech_2"],
+            use_cases=["narration"],
+            samples=[
+                _make_sample(model="sona_speech_1"),
+                _make_sample(model="sona_speech_2"),
+            ],
+        )
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(return_value=detail)
+            inst.aclose = AsyncMock()
+
+            result = await preview_voice("v1", model="sona_speech_2")
+
+        lines = result.splitlines()
+        assert len(lines) == 1
+        assert "model=sona_speech_2]" in lines[0]
+
+    @pytest.mark.asyncio
+    async def test_filter_by_style_narrows(self):
+        """AC #2: style filter dimension narrows results."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        detail = _make_voice_detail(
+            voice_id="v1",
+            supported_languages=["ko"],
+            styles=["happy", "neutral"],
+            models=["sona_speech_1"],
+            use_cases=["narration"],
+            samples=[
+                _make_sample(style="happy"),
+                _make_sample(style="neutral"),
+            ],
+        )
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(return_value=detail)
+            inst.aclose = AsyncMock()
+
+            result = await preview_voice("v1", style="neutral")
+
+        lines = result.splitlines()
+        assert len(lines) == 1
+        assert "style=neutral" in lines[0]
+
+    @pytest.mark.asyncio
+    async def test_empty_samples_returns_no_preview_message(self):
+        """AC #5: voice has no samples => 'This voice has no preview samples.'"""
+        env = {"SUPERTONE_API_KEY": "key"}
+        detail = _make_voice_detail(
+            voice_id="v1",
+            supported_languages=["ko"],
+            styles=["neutral"],
+            models=["sona_speech_1"],
+            use_cases=["narration"],
+            samples=[],
+        )
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(return_value=detail)
+            inst.aclose = AsyncMock()
+
+            result = await preview_voice("v1")
+
+        assert result == "This voice has no preview samples."
+
+    @pytest.mark.asyncio
+    async def test_samples_field_absent_returns_no_preview_message(self):
+        """AC #5: samples field absent entirely (NotRequired) => same message."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        detail = _make_voice_detail(
+            voice_id="v1",
+            supported_languages=["ko"],
+            styles=["neutral"],
+            models=["sona_speech_1"],
+            use_cases=["narration"],
+            samples=None,
+        )
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(return_value=detail)
+            inst.aclose = AsyncMock()
+
+            result = await preview_voice("v1")
+
+        assert result == "This voice has no preview samples."
+
+    @pytest.mark.asyncio
+    async def test_no_match_filters_returns_no_matching_message(self):
+        """AC #4: samples exist but filters match none."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        detail = _make_voice_detail(
+            voice_id="v1",
+            supported_languages=["ko", "en"],
+            styles=["happy"],
+            models=["sona_speech_1"],
+            use_cases=["narration"],
+            samples=[
+                _make_sample(language="ko"),
+                _make_sample(language="en"),
+            ],
+        )
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(return_value=detail)
+            inst.aclose = AsyncMock()
+
+            result = await preview_voice("v1", language="ja")
+
+        assert result == "No matching samples for the given filters."
+
+    @pytest.mark.asyncio
+    async def test_empty_voice_id_returns_validation_error_without_api_call(self):
+        """AC #6: empty voice_id rejected before any API call."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await preview_voice("")
+
+        assert "voice_id must not be empty" in result
+        MC.assert_not_called()
+        inst.get_voice.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_whitespace_voice_id_returns_validation_error_without_api_call(self):
+        """AC #6: whitespace-only voice_id rejected before any API call."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await preview_voice("   ")
+
+        assert "voice_id must not be empty" in result
+        MC.assert_not_called()
+        inst.get_voice.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_auth_error_returns_formatted_string(self):
+        """AC #7: SupertoneAuthError -> formatted auth error."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(side_effect=SupertoneAuthError())
+            inst.aclose = AsyncMock()
+
+            result = await preview_voice("v1")
+
+        assert result == "Authentication failed. Please verify your SUPERTONE_API_KEY."
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_error_returns_formatted_string(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(side_effect=SupertoneRateLimitError())
+            inst.aclose = AsyncMock()
+
+            result = await preview_voice("v1")
+
+        assert "Rate limit exceeded" in result
+
+    @pytest.mark.asyncio
+    async def test_server_error_returns_formatted_string(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(side_effect=SupertoneServerError(503))
+            inst.aclose = AsyncMock()
+
+            result = await preview_voice("v1")
+
+        assert "server error (503)" in result
+
+    @pytest.mark.asyncio
+    async def test_connection_error_returns_formatted_string(self):
+        """Per RL-002: each handler must cover the connection-error branch."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(side_effect=SupertoneConnectionError())
+            inst.aclose = AsyncMock()
+
+            result = await preview_voice("v1")
+
+        assert "Failed to connect" in result
+
+    @pytest.mark.asyncio
+    async def test_missing_api_key_returns_error_without_api_call(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("supertone_tts_mcp.tools.SupertoneClient") as MC:
+                result = await preview_voice("v1")
+                MC.assert_not_called()
+        assert "SUPERTONE_API_KEY" in result
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_success(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        detail = _make_voice_detail(
+            voice_id="v1",
+            supported_languages=["ko"],
+            styles=["neutral"],
+            models=["sona_speech_1"],
+            use_cases=["narration"],
+            samples=[_make_sample()],
+        )
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(return_value=detail)
+            inst.aclose = AsyncMock()
+
+            await preview_voice("v1")
+
+        inst.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_error(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice = AsyncMock(side_effect=SupertoneConnectionError())
+            inst.aclose = AsyncMock()
+
+            await preview_voice("v1")
 
         inst.aclose.assert_awaited_once()

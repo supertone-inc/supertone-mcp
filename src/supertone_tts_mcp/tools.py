@@ -40,6 +40,7 @@ from supertone_tts_mcp.exceptions import (
 )
 from supertone_tts_mcp.models import (
     CreditBalanceDict,
+    SampleDict,
     TTSResponse,
     VoiceDetailDict,
     VoiceInfo,
@@ -703,3 +704,102 @@ async def get_credit_balance() -> str:
         await client.aclose()
 
     return format_credit_balance(balance)
+
+
+# --- preview_voice (ISSUE-017) ---
+
+
+def format_voice_samples(
+    samples: list[SampleDict] | None,
+    filters: dict[str, str | None],
+) -> str:
+    """Format a voice's sample list as a numbered plain-text response.
+
+    Per UX spec §4.6:
+      - One line per matching sample.
+      - Format: `N. [language=ko, style=happy, model=sona_speech_1] <url>`
+      - If `samples` is None or empty: `"This voice has no preview samples."`
+      - If samples exist but filters match none:
+        `"No matching samples for the given filters."`
+
+    `filters` is a mapping with keys "language", "style", "model"; any
+    non-None value is applied as an exact-match filter (AND-combined).
+    Numbering restarts at 1 across the FILTERED subset (not the source list).
+    """
+    if not samples:
+        return "This voice has no preview samples."
+
+    language_filter = filters.get("language")
+    style_filter = filters.get("style")
+    model_filter = filters.get("model")
+
+    matched = [
+        s
+        for s in samples
+        if (language_filter is None or s.get("language") == language_filter)
+        and (style_filter is None or s.get("style") == style_filter)
+        and (model_filter is None or s.get("model") == model_filter)
+    ]
+
+    if not matched:
+        return "No matching samples for the given filters."
+
+    lines = []
+    for i, sample in enumerate(matched, 1):
+        lines.append(
+            f"{i}. [language={sample['language']}, "
+            f"style={sample['style']}, "
+            f"model={sample['model']}] "
+            f"{sample['url']}"
+        )
+    return "\n".join(lines)
+
+
+async def preview_voice(
+    voice_id: str,
+    language: str | None = None,
+    style: str | None = None,
+    model: str | None = None,
+) -> str:
+    """Return formatted sample audio URLs for a single voice.
+
+    Calls `SupertoneClient.get_voice(voice_id)` to fetch the voice detail,
+    then filters its `samples` list by the optional language/style/model
+    parameters. The output is plain text suitable for an LLM to relay to
+    the user.
+
+    Errors from the SDK are mapped to the same plain-text strings used
+    elsewhere in this module.
+    """
+    # Fail-fast input validation — no API call when voice_id is empty/whitespace.
+    if not isinstance(voice_id, str) or not voice_id.strip():
+        return "voice_id must not be empty."
+
+    try:
+        api_key = resolve_api_key()
+    except ValueError as e:
+        return str(e)
+
+    client = SupertoneClient(api_key=api_key)
+    try:
+        detail = await client.get_voice(voice_id=voice_id)
+    except SupertoneAuthError:
+        return "Authentication failed. Please verify your SUPERTONE_API_KEY."
+    except SupertoneRateLimitError:
+        return "Rate limit exceeded. Please wait and try again."
+    except SupertoneServerError as e:
+        return f"Supertone API server error ({e.status_code}). Please try again later."
+    except SupertoneConnectionError:
+        return (
+            "Failed to connect to Supertone API. Please check your network connection."
+        )
+    finally:
+        await client.aclose()
+
+    samples = detail.get("samples")
+    filters: dict[str, str | None] = {
+        "language": language,
+        "style": style,
+        "model": model,
+    }
+    return format_voice_samples(samples, filters)
