@@ -345,6 +345,91 @@ class TestToolRegistration:
         required = schema.get("required", [])
         assert "description" not in required
 
+    # --- ISSUE-020: search_custom_voice / edit_custom_voice / delete_custom_voice ---
+
+    def test_search_custom_voice_tool_exists(self):
+        """ISSUE-020 AC #8: search_custom_voice is registered."""
+        tools = mcp._tool_manager._tools
+        assert "search_custom_voice" in tools
+
+    def test_edit_custom_voice_tool_exists(self):
+        """ISSUE-020 AC #8: edit_custom_voice is registered."""
+        tools = mcp._tool_manager._tools
+        assert "edit_custom_voice" in tools
+
+    def test_delete_custom_voice_tool_exists(self):
+        """ISSUE-020 AC #8: delete_custom_voice is registered."""
+        tools = mcp._tool_manager._tools
+        assert "delete_custom_voice" in tools
+
+    def test_search_custom_voice_description_matches_ux_spec(self):
+        """Description must reflect docs/ux_spec.md §2.9."""
+        tool = mcp._tool_manager._tools["search_custom_voice"]
+        desc = tool.description
+        assert "custom" in desc.lower()
+        assert "name" in desc and "description" in desc
+        # Documents partial-match filtering
+        assert "partial" in desc.lower()
+
+    def test_search_custom_voice_filters_optional(self):
+        tool = mcp._tool_manager._tools["search_custom_voice"]
+        schema = tool.parameters
+        required = schema.get("required", [])
+        assert "name" not in required
+        assert "description" not in required
+
+    def test_search_custom_voice_exposes_filter_params(self):
+        tool = mcp._tool_manager._tools["search_custom_voice"]
+        schema = tool.parameters
+        properties = schema["properties"]
+        assert "name" in properties
+        assert "description" in properties
+
+    def test_edit_custom_voice_description_matches_ux_spec(self):
+        """Description must reflect docs/ux_spec.md §2.10."""
+        tool = mcp._tool_manager._tools["edit_custom_voice"]
+        desc = tool.description
+        assert "name" in desc and "description" in desc
+        # At-least-one rule must be documented in the tool description.
+        assert "at least one" in desc.lower()
+
+    def test_edit_custom_voice_voice_id_is_required(self):
+        tool = mcp._tool_manager._tools["edit_custom_voice"]
+        schema = tool.parameters
+        assert "voice_id" in schema.get("required", [])
+
+    def test_edit_custom_voice_name_and_description_optional(self):
+        tool = mcp._tool_manager._tools["edit_custom_voice"]
+        schema = tool.parameters
+        required = schema.get("required", [])
+        assert "name" not in required
+        assert "description" not in required
+
+    def test_edit_custom_voice_exposes_all_params(self):
+        tool = mcp._tool_manager._tools["edit_custom_voice"]
+        schema = tool.parameters
+        properties = schema["properties"]
+        for kw in ("voice_id", "name", "description"):
+            assert kw in properties
+
+    def test_delete_custom_voice_description_warns_irreversible(self):
+        """Description must call out the irreversibility per UX spec §2.11."""
+        tool = mcp._tool_manager._tools["delete_custom_voice"]
+        desc = tool.description
+        assert "IRREVERSIBLE" in desc
+        # Encourages user confirmation since v0.2 has no in-tool gate.
+        assert "confirm" in desc.lower()
+
+    def test_delete_custom_voice_voice_id_is_required(self):
+        tool = mcp._tool_manager._tools["delete_custom_voice"]
+        schema = tool.parameters
+        assert "voice_id" in schema.get("required", [])
+
+    def test_delete_custom_voice_has_voice_id_parameter(self):
+        tool = mcp._tool_manager._tools["delete_custom_voice"]
+        schema = tool.parameters
+        assert "voice_id" in schema["properties"]
+
 
 class TestMainFunction:
     def test_main_is_callable(self):

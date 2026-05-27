@@ -43,6 +43,7 @@ from supertone_tts_mcp.exceptions import (
 )
 from supertone_tts_mcp.models import (
     CreditBalanceDict,
+    CustomVoiceDict,
     SampleDict,
     TTSResponse,
     VoiceDetailDict,
@@ -1034,3 +1035,171 @@ async def clone_voice(
         f"Custom voice created. voice_id: {voice_id}. "
         "Use this voice_id in text_to_speech."
     )
+
+
+# --- search_custom_voice / edit_custom_voice / delete_custom_voice (ISSUE-020) ---
+
+
+def format_custom_voice_list(voices: list[CustomVoiceDict]) -> str:
+    """Format a list of `CustomVoiceDict` as a numbered plain-text response.
+
+    Per UX spec §4.9: a header "Found N custom voices:" (or
+    "No custom voices found." when empty) followed by one entry per
+    voice with `Name`, `Voice ID`, and `Description` fields.
+
+    Description renders as "-" when missing/empty per the UX spec
+    placeholder convention used elsewhere (see `format_voice_detail`).
+    Note: the UX spec illustrative example also includes a `Created`
+    line; the SDK schema does NOT expose a created-at field for custom
+    voices in v0.2, so that line is intentionally omitted to keep
+    output truthful to the source data. This is documented as a
+    docs-vs-SDK drift in review notes.
+    """
+    if not voices:
+        return "No custom voices found."
+
+    header = f"Found {len(voices)} custom voices:"
+    entries = []
+    for i, voice in enumerate(voices, 1):
+        description = voice.get("description") or "-"
+        entry = (
+            f"{i}. Name: {voice['name']}\n"
+            f"   Voice ID: {voice['voice_id']}\n"
+            f"   Description: {description}"
+        )
+        entries.append(entry)
+    return header + "\n\n" + "\n\n".join(entries)
+
+
+async def search_custom_voice(
+    name: str | None = None,
+    description: str | None = None,
+) -> str:
+    """Return a numbered list of the API key's custom (cloned) voices.
+
+    Both `name` and `description` are optional partial-match filters
+    delegated to the SDK. Errors from the SDK are mapped to the same
+    plain-text strings used elsewhere in this module.
+    """
+    try:
+        api_key = resolve_api_key()
+    except ValueError as e:
+        return str(e)
+
+    client = SupertoneClient(api_key=api_key)
+    try:
+        voices = await client.search_custom_voices(
+            name=name,
+            description=description,
+        )
+    except SupertoneAuthError:
+        return "Authentication failed. Please verify your SUPERTONE_API_KEY."
+    except SupertoneRateLimitError:
+        return "Rate limit exceeded. Please wait and try again."
+    except SupertoneServerError as e:
+        return f"Supertone API server error ({e.status_code}). Please try again later."
+    except SupertoneConnectionError:
+        return (
+            "Failed to connect to Supertone API. Please check your network connection."
+        )
+    finally:
+        await client.aclose()
+
+    return format_custom_voice_list(voices)
+
+
+async def edit_custom_voice(
+    voice_id: str,
+    name: str | None = None,
+    description: str | None = None,
+) -> str:
+    """Update name and/or description of an existing custom voice.
+
+    Validates fail-fast that:
+      1. `voice_id` is a non-empty (post-strip) string.
+      2. At least one of `name` / `description` is provided.
+
+    No API call is made if either guard fails. Errors from the SDK are
+    mapped to the same plain-text strings used elsewhere in this module.
+
+    Per UX spec §4.10, a 404 should surface as
+      `Custom voice not found: "{voice_id}".`
+    but the shared `_handle_sdk_errors` does NOT yet map 404 (RL-006).
+    This handler intentionally mirrors the existing `get_voice` /
+    `preview_voice` behavior (no 404 mapping) and the gap is logged for
+    a future tech-debt issue.
+    """
+    if not isinstance(voice_id, str) or not voice_id.strip():
+        return "voice_id must not be empty."
+
+    if name is None and description is None:
+        return "Provide at least one of: name, description."
+
+    try:
+        api_key = resolve_api_key()
+    except ValueError as e:
+        return str(e)
+
+    client = SupertoneClient(api_key=api_key)
+    try:
+        await client.edit_custom_voice(
+            voice_id=voice_id,
+            name=name,
+            description=description,
+        )
+    except SupertoneAuthError:
+        return "Authentication failed. Please verify your SUPERTONE_API_KEY."
+    except SupertoneRateLimitError:
+        return "Rate limit exceeded. Please wait and try again."
+    except SupertoneServerError as e:
+        return f"Supertone API server error ({e.status_code}). Please try again later."
+    except SupertoneConnectionError:
+        return (
+            "Failed to connect to Supertone API. Please check your network connection."
+        )
+    finally:
+        await client.aclose()
+
+    return f"Custom voice updated. voice_id: {voice_id}."
+
+
+async def delete_custom_voice(voice_id: str) -> str:
+    """Permanently delete a custom (cloned) voice by ID.
+
+    Validates fail-fast that `voice_id` is a non-empty (post-strip)
+    string. No API call is made if validation fails. Per UX spec §4.11
+    this action is irreversible; the user-facing warning lives in the
+    tool description text (no in-tool confirmation gate in v0.2).
+
+    Per UX spec §4.11, a 404 should surface as
+      `Custom voice not found: "{voice_id}".`
+    but the shared `_handle_sdk_errors` does NOT yet map 404 (RL-006).
+    This handler intentionally mirrors the existing `get_voice` /
+    `preview_voice` behavior (no 404 mapping) and the gap is logged for
+    a future tech-debt issue.
+    """
+    if not isinstance(voice_id, str) or not voice_id.strip():
+        return "voice_id must not be empty."
+
+    try:
+        api_key = resolve_api_key()
+    except ValueError as e:
+        return str(e)
+
+    client = SupertoneClient(api_key=api_key)
+    try:
+        await client.delete_custom_voice(voice_id=voice_id)
+    except SupertoneAuthError:
+        return "Authentication failed. Please verify your SUPERTONE_API_KEY."
+    except SupertoneRateLimitError:
+        return "Rate limit exceeded. Please wait and try again."
+    except SupertoneServerError as e:
+        return f"Supertone API server error ({e.status_code}). Please try again later."
+    except SupertoneConnectionError:
+        return (
+            "Failed to connect to Supertone API. Please check your network connection."
+        )
+    finally:
+        await client.aclose()
+
+    return f"Custom voice deleted. voice_id: {voice_id}."
