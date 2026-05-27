@@ -626,13 +626,14 @@ def format_credit_balance(balance: CreditBalanceDict) -> str:
 
     lines = [f"Credit balance: {balance_str} chars remaining."]
 
-    # Forward-compat: optional plan/expiry fields if the SDK starts returning
-    # them (current TypedDict does not declare them, so use .get on a cast).
-    extras = balance  # type: ignore[assignment]
-    plan = extras.get("plan") if isinstance(extras, dict) else None
-    expires = extras.get("expires_at") if isinstance(extras, dict) else None
+    # Forward-compat: render optional `plan` / `expires_at` if the SDK starts
+    # returning them. The current TypedDict only declares `balance`, so use
+    # `.get(...)` against the runtime dict — TypedDicts ARE dicts at runtime,
+    # so this is safe without an isinstance ladder.
+    plan = balance.get("plan")  # type: ignore[typeddict-item]
     if plan:
         lines.append(f"Plan: {plan}")
+    expires = balance.get("expires_at")  # type: ignore[typeddict-item]
     if expires:
         lines.append(f"Expires: {expires}")
 
