@@ -139,3 +139,37 @@
 - **Frequency:** 1
 - **Observed-In:** PR #12 (ISSUE-014), `tests/test_supertone_client.py` —
   required fix commit `eb1baaa`.
+
+---
+
+## [RL-006] Map every documented error path in the client wrapper before promising it in the handler
+
+- **Category:** Error Handling
+- **Pattern:** When a UX spec describes a specific error string for a
+  specific HTTP status (e.g., "Voice not found: \"{voice_id}\"." for 404),
+  the handler can only deliver that string if the SDK wrapper maps the
+  underlying status to a domain exception. If the wrapper's
+  `_handle_sdk_errors` does not cover the status, the exception bubbles
+  raw and the handler silently violates the "never raise to caller"
+  contract.
+- **Why it matters:** Tests against mocked clients pass because the mock
+  returns whatever you tell it to; the gap only surfaces with a real 404
+  from the API. The user sees a stack trace or an unhandled error rather
+  than the friendly UX message the spec promised.
+- **Fix:** When adding a new handler for an inspection endpoint
+  (`get_voice`, `preview_voice`, `edit_custom_voice`, etc.), audit
+  `_handle_sdk_errors` first. Every status documented in the UX spec
+  ("voice not found", "custom voice not found", "file too large") needs
+  a matching mapping. If the SDK exposes the status but not a typed
+  exception, branch on `exc.raw_response.status_code` in the wrapper.
+- **Prevention point:** Implementation phase — at the moment a new
+  handler is written, cross-reference its UX spec error table against
+  `_handle_sdk_errors` and the SDK's error module before coding the
+  except chain.
+- **Frequency:** 1
+- **Observed-In:** PR #16 (ISSUE-016), `src/supertone_tts_mcp/tools.py`
+  `get_voice` — UX spec §4.4 promises `Voice not found: "{voice_id}".`
+  but `_handle_sdk_errors` does not map any 404. Will resurface for
+  ISSUE-017 (`preview_voice`), ISSUE-019 (`edit_custom_voice`,
+  `delete_custom_voice`). Logged as Discovered Issue in
+  `docs/sprint_state.md`.

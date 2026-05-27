@@ -25,7 +25,7 @@
 | ISSUE-014 | Extend SupertoneClient with voice discovery methods | P0 | 0.5d | ISSUE-013 | done |
 | ISSUE-015 | Replace `list_voices` with `search_voice` tool (breaking) | P1 | 0.5d | ISSUE-014 | done |
 | ISSUE-016 | Add `get_voice` + `get_credit_balance` tools | P1 | 0.5d | ISSUE-014 | backlog |
-| ISSUE-017 | Add `preview_voice` tool (returns sample URLs) | P1 | 0.5d | ISSUE-014, ISSUE-016 | backlog |
+| ISSUE-017 | Add `preview_voice` tool (returns sample URLs) | P1 | 0.5d | ISSUE-014, ISSUE-016 | done |
 | ISSUE-018 | Add `predict_duration` tool (client + handler) | P1 | 0.5d | ISSUE-014 | backlog |
 | ISSUE-019 | Add `clone_voice` tool (single file ≤3MB) | P1 | 1d | ISSUE-014 | backlog |
 | ISSUE-020 | Custom voice CRUD tools (search/edit/delete) | P1 | 1d | ISSUE-019 | backlog |
@@ -767,11 +767,11 @@ Restore `list_voices` handler/tests; revert server registration; revert README.
 - PRD-Ref: FR-013, FR-014, US-008, US-009
 - Priority: P1
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Branch: issue/ISSUE-016-get-voice-and-balance
+- GH-Issue: https://github.com/pillip/supertone-mcp/issues/15
+- PR: https://github.com/pillip/supertone-mcp/pull/16
 - Depends-On: ISSUE-014
 
 #### Goal
@@ -814,11 +814,11 @@ Revert tools.py additions, server.py registrations, and related tests.
 - PRD-Ref: FR-015, US-008
 - Priority: P1
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Branch: feat/ISSUE-017-preview-voice
+- GH-Issue: https://github.com/pillip/supertone-mcp/issues/17
+- PR: https://github.com/pillip/supertone-mcp/pull/18
 - Depends-On: ISSUE-014, ISSUE-016
 
 #### Goal
