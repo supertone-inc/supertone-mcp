@@ -4,6 +4,8 @@
 
 MCP server for [Supertone](https://supertone.ai) TTS API. Generate high-quality speech, browse the voice catalog, predict synthesis cost, and create cloned voices — directly from Claude Desktop, Cursor, or any MCP-compatible client.
 
+[![supertone-inc/supertone-mcp MCP server](https://glama.ai/mcp/servers/supertone-inc/supertone-mcp/badges/score.svg)](https://glama.ai/mcp/servers/supertone-inc/supertone-mcp)
+
 ## Features
 
 **Synthesis**
