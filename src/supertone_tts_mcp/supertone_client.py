@@ -19,6 +19,7 @@ from supertone_tts_mcp.exceptions import (
 )
 from supertone_tts_mcp.models import (
     CreditBalanceDict,
+    CustomVoiceDict,
     SampleDict,
     VoiceDetailDict,
     VoiceDict,
@@ -466,6 +467,129 @@ class SupertoneClient:
             _handle_sdk_errors(exc)
 
         return {"voice_id": response.voice_id}
+
+    async def search_custom_voices(
+        self,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> list[CustomVoiceDict]:
+        """List custom (cloned) voices for the current API key.
+
+        Mirrors the pagination pattern of `search_voices`: loops on
+        `next_page_token` until the SDK returns a terminal page (no
+        token). Filters are pass-through; the SDK / API decides the
+        match semantics (partial-match per UX spec §2.9 / §4.9).
+
+        Returns a list of `CustomVoiceDict` entries (the SDK exposes
+        `voice_id`, `name`, and nullable `description`).
+        """
+        all_voices: list[CustomVoiceDict] = []
+        next_page_token: str | None = None
+
+        while True:
+            try:
+                response = await self._sdk.custom_voices.search_custom_voices_async(
+                    page_size=100,
+                    next_page_token=next_page_token,
+                    name=name,
+                    description=description,
+                )
+            except (
+                UnauthorizedErrorResponse,
+                ForbiddenErrorResponse,
+                TooManyRequestsErrorResponse,
+                InternalServerErrorResponse,
+                NoResponseError,
+                httpx.ConnectError,
+                httpx.TimeoutException,
+            ) as exc:
+                _handle_sdk_errors(exc)
+
+            for item in response.items:
+                voice: CustomVoiceDict = {
+                    "voice_id": item.voice_id,
+                    "name": item.name,
+                }
+                item_description = getattr(item, "description", None)
+                if item_description is not None:
+                    voice["description"] = item_description
+                all_voices.append(voice)
+
+            next_page_token = response.next_page_token
+            if not next_page_token:
+                break
+
+        return all_voices
+
+    async def edit_custom_voice(
+        self,
+        voice_id: str,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> CustomVoiceDict:
+        """Update name and/or description of a custom voice.
+
+        Partial update: only the non-None kwargs are forwarded to the
+        SDK. The caller is responsible for enforcing the "at least one
+        of name/description" rule before invoking this method.
+
+        Returns a `CustomVoiceDict` reflecting the updated voice.
+        """
+        # Build kwargs dict so we only send fields the caller actually set.
+        # The SDK accepts None for both, but explicit omission keeps the
+        # wire payload aligned with the caller's intent.
+        sdk_kwargs: dict = {"voice_id": voice_id}
+        if name is not None:
+            sdk_kwargs["name"] = name
+        if description is not None:
+            sdk_kwargs["description"] = description
+
+        try:
+            response = await self._sdk.custom_voices.edit_custom_voice_async(
+                **sdk_kwargs,
+            )
+        except (
+            UnauthorizedErrorResponse,
+            ForbiddenErrorResponse,
+            TooManyRequestsErrorResponse,
+            InternalServerErrorResponse,
+            NoResponseError,
+            httpx.ConnectError,
+            httpx.TimeoutException,
+        ) as exc:
+            _handle_sdk_errors(exc)
+
+        result: CustomVoiceDict = {
+            "voice_id": response.voice_id,
+            "name": response.name,
+        }
+        resp_description = getattr(response, "description", None)
+        if resp_description is not None:
+            result["description"] = resp_description
+        return result
+
+    async def delete_custom_voice(self, voice_id: str) -> None:
+        """Delete a custom (cloned) voice by ID.
+
+        The SDK returns nothing on a successful 204 / 200. Errors are
+        mapped through `_handle_sdk_errors` like the other wrappers.
+        Per UX spec §4.11 this is irreversible — callers (the MCP tool
+        layer) are expected to surface the warning to the user.
+        """
+        try:
+            await self._sdk.custom_voices.delete_custom_voice_async(
+                voice_id=voice_id,
+            )
+        except (
+            UnauthorizedErrorResponse,
+            ForbiddenErrorResponse,
+            TooManyRequestsErrorResponse,
+            InternalServerErrorResponse,
+            NoResponseError,
+            httpx.ConnectError,
+            httpx.TimeoutException,
+        ) as exc:
+            _handle_sdk_errors(exc)
 
     async def aclose(self) -> None:
         """Close the underlying SDK HTTP client."""

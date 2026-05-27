@@ -3344,3 +3344,663 @@ class TestCloneVoiceHandler:
             await clone_voice(name="V", audio_path=str(f))
 
         inst.aclose.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# ISSUE-020: search_custom_voice / edit_custom_voice / delete_custom_voice
+# ---------------------------------------------------------------------------
+
+
+class TestFormatCustomVoiceList:
+    """Tests for the `format_custom_voice_list` helper."""
+
+    def test_empty_returns_no_custom_voices(self):
+        from supertone_tts_mcp.tools import format_custom_voice_list
+
+        assert format_custom_voice_list([]) == "No custom voices found."
+
+    def test_two_voices_numbered_with_description(self):
+        from supertone_tts_mcp.tools import format_custom_voice_list
+
+        voices = [
+            {"voice_id": "cv_1", "name": "MyVoice", "description": "warm"},
+            {"voice_id": "cv_2", "name": "Podcast", "description": "intro"},
+        ]
+        out = format_custom_voice_list(voices)
+        assert "Found 2 custom voices:" in out
+        assert "1. Name: MyVoice" in out
+        assert "Voice ID: cv_1" in out
+        assert "Description: warm" in out
+        assert "2. Name: Podcast" in out
+        assert "Voice ID: cv_2" in out
+        assert "Description: intro" in out
+
+    def test_missing_description_renders_dash(self):
+        """When `description` is absent, the field renders as `-`."""
+        from supertone_tts_mcp.tools import format_custom_voice_list
+
+        voices = [{"voice_id": "cv_1", "name": "NoDesc"}]
+        out = format_custom_voice_list(voices)
+        assert "Description: -" in out
+
+    def test_none_description_renders_dash(self):
+        from supertone_tts_mcp.tools import format_custom_voice_list
+
+        voices = [{"voice_id": "cv_1", "name": "NoDesc", "description": None}]
+        out = format_custom_voice_list(voices)
+        assert "Description: -" in out
+
+
+class TestSearchCustomVoiceHandler:
+    """Tests for the `search_custom_voice(name?, description?)` handler."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_returns_numbered_list(self):
+        from supertone_tts_mcp.tools import search_custom_voice
+
+        voices = [
+            {"voice_id": "cv_1", "name": "V1", "description": "first"},
+            {"voice_id": "cv_2", "name": "V2", "description": "second"},
+        ]
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_custom_voices = AsyncMock(return_value=voices)
+            inst.aclose = AsyncMock()
+
+            result = await search_custom_voice()
+
+        assert "Found 2 custom voices:" in result
+        assert "1. Name: V1" in result
+        assert "Voice ID: cv_1" in result
+        assert "Description: first" in result
+        assert "2. Name: V2" in result
+
+    @pytest.mark.asyncio
+    async def test_filters_forwarded_to_client(self):
+        """AC: `search_custom_voice(name="my")` forwards the filter to the SDK."""
+        from supertone_tts_mcp.tools import search_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_custom_voices = AsyncMock(
+                return_value=[{"voice_id": "cv_1", "name": "my-voice"}]
+            )
+            inst.aclose = AsyncMock()
+
+            await search_custom_voice(name="my", description="warm")
+
+        call_kwargs = inst.search_custom_voices.call_args.kwargs
+        assert call_kwargs["name"] == "my"
+        assert call_kwargs["description"] == "warm"
+
+    @pytest.mark.asyncio
+    async def test_empty_result_returns_friendly_message(self):
+        from supertone_tts_mcp.tools import search_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_custom_voices = AsyncMock(return_value=[])
+            inst.aclose = AsyncMock()
+
+            result = await search_custom_voice()
+
+        assert result == "No custom voices found."
+
+    @pytest.mark.asyncio
+    async def test_missing_api_key_returns_error(self):
+        from supertone_tts_mcp.tools import search_custom_voice
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("supertone_tts_mcp.tools.SupertoneClient") as MC:
+                result = await search_custom_voice()
+                MC.assert_not_called()
+
+        assert "SUPERTONE_API_KEY" in result
+
+    @pytest.mark.asyncio
+    async def test_auth_error_returns_formatted_string(self):
+        from supertone_tts_mcp.tools import search_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_custom_voices = AsyncMock(side_effect=SupertoneAuthError())
+            inst.aclose = AsyncMock()
+
+            result = await search_custom_voice()
+
+        assert result == (
+            "Authentication failed. Please verify your SUPERTONE_API_KEY."
+        )
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_returns_formatted_string(self):
+        from supertone_tts_mcp.tools import search_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_custom_voices = AsyncMock(side_effect=SupertoneRateLimitError())
+            inst.aclose = AsyncMock()
+
+            result = await search_custom_voice()
+
+        assert result == "Rate limit exceeded. Please wait and try again."
+
+    @pytest.mark.asyncio
+    async def test_server_error_returns_formatted_string(self):
+        from supertone_tts_mcp.tools import search_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_custom_voices = AsyncMock(side_effect=SupertoneServerError(503))
+            inst.aclose = AsyncMock()
+
+            result = await search_custom_voice()
+
+        assert result == "Supertone API server error (503). Please try again later."
+
+    @pytest.mark.asyncio
+    async def test_connection_error_returns_formatted_string(self):
+        """RL-002: the handler covers the connection-error branch."""
+        from supertone_tts_mcp.tools import search_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_custom_voices = AsyncMock(
+                side_effect=SupertoneConnectionError()
+            )
+            inst.aclose = AsyncMock()
+
+            result = await search_custom_voice()
+
+        assert result == (
+            "Failed to connect to Supertone API. Please check your network connection."
+        )
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_success(self):
+        from supertone_tts_mcp.tools import search_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_custom_voices = AsyncMock(return_value=[])
+            inst.aclose = AsyncMock()
+
+            await search_custom_voice()
+
+        inst.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_error(self):
+        from supertone_tts_mcp.tools import search_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_custom_voices = AsyncMock(side_effect=SupertoneAuthError())
+            inst.aclose = AsyncMock()
+
+            await search_custom_voice()
+
+        inst.aclose.assert_awaited_once()
+
+
+class TestEditCustomVoiceHandler:
+    """Tests for the `edit_custom_voice(voice_id, name?, description?)` handler."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_returns_success_message(self):
+        """AC: edit_custom_voice("cv1", name="NewName") -> success string."""
+        from supertone_tts_mcp.tools import edit_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.edit_custom_voice = AsyncMock(
+                return_value={"voice_id": "cv1", "name": "NewName"}
+            )
+            inst.aclose = AsyncMock()
+
+            result = await edit_custom_voice(voice_id="cv1", name="NewName")
+
+        assert result == "Custom voice updated. voice_id: cv1."
+
+    @pytest.mark.asyncio
+    async def test_no_fields_returns_validation_error_without_api_call(self):
+        """AC: edit_custom_voice('cv1') with no name+desc rejects without API call."""
+        from supertone_tts_mcp.tools import edit_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.edit_custom_voice = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await edit_custom_voice(voice_id="cv1")
+
+        assert result == "Provide at least one of: name, description."
+        MC.assert_not_called()
+        inst.edit_custom_voice.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_only_description_is_valid(self):
+        """`description` alone satisfies the at-least-one rule."""
+        from supertone_tts_mcp.tools import edit_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.edit_custom_voice = AsyncMock(
+                return_value={"voice_id": "cv1", "name": "Same"}
+            )
+            inst.aclose = AsyncMock()
+
+            result = await edit_custom_voice(voice_id="cv1", description="new desc")
+
+        call_kwargs = inst.edit_custom_voice.call_args.kwargs
+        assert call_kwargs["voice_id"] == "cv1"
+        assert call_kwargs["name"] is None
+        assert call_kwargs["description"] == "new desc"
+        assert result == "Custom voice updated. voice_id: cv1."
+
+    @pytest.mark.asyncio
+    async def test_both_fields_forwarded(self):
+        from supertone_tts_mcp.tools import edit_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.edit_custom_voice = AsyncMock(
+                return_value={"voice_id": "cv1", "name": "NewName"}
+            )
+            inst.aclose = AsyncMock()
+
+            await edit_custom_voice(voice_id="cv1", name="NewName", description="d")
+
+        call_kwargs = inst.edit_custom_voice.call_args.kwargs
+        assert call_kwargs["name"] == "NewName"
+        assert call_kwargs["description"] == "d"
+
+    @pytest.mark.asyncio
+    async def test_empty_voice_id_returns_validation_error_without_api_call(self):
+        from supertone_tts_mcp.tools import edit_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.edit_custom_voice = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await edit_custom_voice(voice_id="", name="N")
+
+        assert result == "voice_id must not be empty."
+        MC.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_whitespace_voice_id_returns_validation_error(self):
+        from supertone_tts_mcp.tools import edit_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.edit_custom_voice = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await edit_custom_voice(voice_id="   ", name="N")
+
+        assert result == "voice_id must not be empty."
+        MC.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_missing_api_key_returns_error(self):
+        from supertone_tts_mcp.tools import edit_custom_voice
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("supertone_tts_mcp.tools.SupertoneClient") as MC:
+                result = await edit_custom_voice(voice_id="cv1", name="N")
+                MC.assert_not_called()
+
+        assert "SUPERTONE_API_KEY" in result
+
+    @pytest.mark.asyncio
+    async def test_auth_error_returns_formatted_string(self):
+        """AC: 401 maps to the formatted auth error string."""
+        from supertone_tts_mcp.tools import edit_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.edit_custom_voice = AsyncMock(side_effect=SupertoneAuthError())
+            inst.aclose = AsyncMock()
+
+            result = await edit_custom_voice(voice_id="cv1", name="N")
+
+        assert result == (
+            "Authentication failed. Please verify your SUPERTONE_API_KEY."
+        )
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_returns_formatted_string(self):
+        from supertone_tts_mcp.tools import edit_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.edit_custom_voice = AsyncMock(side_effect=SupertoneRateLimitError())
+            inst.aclose = AsyncMock()
+
+            result = await edit_custom_voice(voice_id="cv1", name="N")
+
+        assert result == "Rate limit exceeded. Please wait and try again."
+
+    @pytest.mark.asyncio
+    async def test_server_error_returns_formatted_string(self):
+        from supertone_tts_mcp.tools import edit_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.edit_custom_voice = AsyncMock(side_effect=SupertoneServerError(503))
+            inst.aclose = AsyncMock()
+
+            result = await edit_custom_voice(voice_id="cv1", name="N")
+
+        assert result == "Supertone API server error (503). Please try again later."
+
+    @pytest.mark.asyncio
+    async def test_connection_error_returns_formatted_string(self):
+        """RL-002: handler covers the connection-error branch."""
+        from supertone_tts_mcp.tools import edit_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.edit_custom_voice = AsyncMock(side_effect=SupertoneConnectionError())
+            inst.aclose = AsyncMock()
+
+            result = await edit_custom_voice(voice_id="cv1", name="N")
+
+        assert result == (
+            "Failed to connect to Supertone API. Please check your network connection."
+        )
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_success(self):
+        from supertone_tts_mcp.tools import edit_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.edit_custom_voice = AsyncMock(
+                return_value={"voice_id": "cv1", "name": "N"}
+            )
+            inst.aclose = AsyncMock()
+
+            await edit_custom_voice(voice_id="cv1", name="N")
+
+        inst.aclose.assert_awaited_once()
+
+
+class TestDeleteCustomVoiceHandler:
+    """Tests for the `delete_custom_voice(voice_id)` handler."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_returns_success_message(self):
+        """AC: delete_custom_voice("cv1") -> success string on 204/200."""
+        from supertone_tts_mcp.tools import delete_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.delete_custom_voice = AsyncMock(return_value=None)
+            inst.aclose = AsyncMock()
+
+            result = await delete_custom_voice(voice_id="cv1")
+
+        assert result == "Custom voice deleted. voice_id: cv1."
+
+    @pytest.mark.asyncio
+    async def test_empty_voice_id_returns_validation_error_without_api_call(self):
+        """AC: delete_custom_voice("") rejects without API call."""
+        from supertone_tts_mcp.tools import delete_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.delete_custom_voice = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await delete_custom_voice(voice_id="")
+
+        assert result == "voice_id must not be empty."
+        MC.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_whitespace_voice_id_returns_validation_error(self):
+        """AC: delete_custom_voice('   ') rejects without API call."""
+        from supertone_tts_mcp.tools import delete_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.delete_custom_voice = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await delete_custom_voice(voice_id="   ")
+
+        assert result == "voice_id must not be empty."
+        MC.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_voice_id_forwarded_to_client(self):
+        from supertone_tts_mcp.tools import delete_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.delete_custom_voice = AsyncMock(return_value=None)
+            inst.aclose = AsyncMock()
+
+            await delete_custom_voice(voice_id="cv_xyz")
+
+        call_kwargs = inst.delete_custom_voice.call_args.kwargs
+        assert call_kwargs["voice_id"] == "cv_xyz"
+
+    @pytest.mark.asyncio
+    async def test_missing_api_key_returns_error(self):
+        from supertone_tts_mcp.tools import delete_custom_voice
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("supertone_tts_mcp.tools.SupertoneClient") as MC:
+                result = await delete_custom_voice(voice_id="cv1")
+                MC.assert_not_called()
+
+        assert "SUPERTONE_API_KEY" in result
+
+    @pytest.mark.asyncio
+    async def test_auth_error_returns_formatted_string(self):
+        """AC: 401 maps to the formatted auth error string."""
+        from supertone_tts_mcp.tools import delete_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.delete_custom_voice = AsyncMock(side_effect=SupertoneAuthError())
+            inst.aclose = AsyncMock()
+
+            result = await delete_custom_voice(voice_id="cv1")
+
+        assert result == (
+            "Authentication failed. Please verify your SUPERTONE_API_KEY."
+        )
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_returns_formatted_string(self):
+        from supertone_tts_mcp.tools import delete_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.delete_custom_voice = AsyncMock(side_effect=SupertoneRateLimitError())
+            inst.aclose = AsyncMock()
+
+            result = await delete_custom_voice(voice_id="cv1")
+
+        assert result == "Rate limit exceeded. Please wait and try again."
+
+    @pytest.mark.asyncio
+    async def test_server_error_returns_formatted_string(self):
+        from supertone_tts_mcp.tools import delete_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.delete_custom_voice = AsyncMock(side_effect=SupertoneServerError(500))
+            inst.aclose = AsyncMock()
+
+            result = await delete_custom_voice(voice_id="cv1")
+
+        assert result == "Supertone API server error (500). Please try again later."
+
+    @pytest.mark.asyncio
+    async def test_connection_error_returns_formatted_string(self):
+        """RL-002: handler covers the connection-error branch."""
+        from supertone_tts_mcp.tools import delete_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.delete_custom_voice = AsyncMock(side_effect=SupertoneConnectionError())
+            inst.aclose = AsyncMock()
+
+            result = await delete_custom_voice(voice_id="cv1")
+
+        assert result == (
+            "Failed to connect to Supertone API. Please check your network connection."
+        )
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_success(self):
+        from supertone_tts_mcp.tools import delete_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.delete_custom_voice = AsyncMock(return_value=None)
+            inst.aclose = AsyncMock()
+
+            await delete_custom_voice(voice_id="cv1")
+
+        inst.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_error(self):
+        from supertone_tts_mcp.tools import delete_custom_voice
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.delete_custom_voice = AsyncMock(side_effect=SupertoneAuthError())
+            inst.aclose = AsyncMock()
+
+            await delete_custom_voice(voice_id="cv1")
+
+        inst.aclose.assert_awaited_once()

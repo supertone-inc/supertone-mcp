@@ -123,6 +123,19 @@ class CreditBalanceDict(TypedDict):
     balance: float | None
 
 
+class CustomVoiceDict(TypedDict):
+    """Custom (cloned) voice entry (mirrors SDK `GetCustomVoiceResponse`).
+
+    Per RL-001: only `description` is nullable in the SDK schema. The
+    required fields default to `total=True` so downstream consumers can
+    read them without `.get()` guards.
+    """
+
+    voice_id: str
+    name: str
+    description: NotRequired[str | None]
+
+
 def generate_output_path(output_dir: str, output_format: str) -> Path:
     """Generate a unique output file path for an audio file.
 

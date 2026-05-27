@@ -253,6 +253,75 @@ async def clone_voice(
     )
 
 
+@mcp.tool(
+    name="search_custom_voice",
+    description=(
+        "List custom (cloned) voices created by this API key. "
+        "Optional name and description filters perform partial matching. "
+        "Pagination is handled internally; v0.2 returns the SDK default page."
+    ),
+)
+async def search_custom_voice(
+    name: str | None = None,
+    description: str | None = None,
+) -> str:
+    """List the API key's custom (cloned) voices.
+
+    Args:
+        name: Partial-match filter on custom voice name.
+        description: Partial-match filter on custom voice description.
+    """
+    return await tools.search_custom_voice(
+        name=name,
+        description=description,
+    )
+
+
+@mcp.tool(
+    name="edit_custom_voice",
+    description=(
+        "Update the name and/or description of an existing custom voice. "
+        "At least one of name or description must be provided."
+    ),
+)
+async def edit_custom_voice(
+    voice_id: str,
+    name: str | None = None,
+    description: str | None = None,
+) -> str:
+    """Update name and/or description of a custom voice.
+
+    Args:
+        voice_id: Custom voice identifier. Required.
+        name: New name. Optional, but one of name/description must be set.
+        description: New description. Optional, but one of name/description
+            must be set.
+    """
+    return await tools.edit_custom_voice(
+        voice_id=voice_id,
+        name=name,
+        description=description,
+    )
+
+
+@mcp.tool(
+    name="delete_custom_voice",
+    description=(
+        "Permanently delete a custom (cloned) voice. "
+        "THIS IS IRREVERSIBLE — once deleted, the voice cannot be recovered "
+        "and any saved voice_id referencing it will stop working. "
+        "Confirm with the user before calling."
+    ),
+)
+async def delete_custom_voice(voice_id: str) -> str:
+    """Permanently delete a custom (cloned) voice by ID.
+
+    Args:
+        voice_id: Custom voice identifier to delete. Required.
+    """
+    return await tools.delete_custom_voice(voice_id=voice_id)
+
+
 def main() -> None:
     """Start the Supertone TTS MCP server."""
     mcp.run(transport="stdio")
