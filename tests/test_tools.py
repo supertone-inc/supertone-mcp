@@ -20,12 +20,12 @@ from supertone_tts_mcp.tools import (
     format_tts_metadata,
     format_tts_response,
     format_voice_list,
-    list_voices,
     resolve_api_key,
     resolve_autoplay,
     resolve_output_dir,
     resolve_output_mode,
     resolve_voice_id,
+    search_voice,
     text_to_speech,
     validate_language,
     validate_model,
@@ -361,6 +361,50 @@ class TestFormatVoiceList:
         ]
         result = format_voice_list(voices, language_filter="ko")
         assert "Found 1 voices matching language: ko" in result
+
+    def test_filters_prepended_when_any_filter_active(self):
+        """v0.2: any non-None filter triggers a 'Filters applied:' header line."""
+        voices = [
+            VoiceInfo(
+                voice_id="v1",
+                name="V1",
+                supported_languages=["ko"],
+                supported_styles=["neutral"],
+            ),
+        ]
+        result = format_voice_list(
+            voices, filters={"gender": "female", "language": "ko", "age": None}
+        )
+        first_line = result.splitlines()[0]
+        assert first_line.startswith("Filters applied:")
+        assert "gender=female" in first_line
+        assert "language=ko" in first_line
+        # None values must NOT appear (use the filter prefix to avoid the
+        # accidental substring match against `language=`).
+        assert " age=" not in first_line
+        assert "age=None" not in first_line
+        # Numbered list still follows
+        assert "Found 1 voices:" in result
+        assert "1. Name: V1" in result
+
+    def test_filters_all_none_does_not_render_header(self):
+        """All-None filters dict is treated as no filters."""
+        voices = [
+            VoiceInfo(
+                voice_id="v1",
+                name="V1",
+                supported_languages=["ko"],
+                supported_styles=["neutral"],
+            ),
+        ]
+        result = format_voice_list(voices, filters={"gender": None, "language": None})
+        assert "Filters applied" not in result
+        assert "Found 1 voices:" in result
+
+    def test_filters_empty_result_message(self):
+        """v0.2: empty result with active filters returns the filters-empty msg."""
+        result = format_voice_list([], filters={"gender": "zzz"})
+        assert result == "No voices found matching the filters."
 
 
 class TestCalculateDuration:
@@ -879,80 +923,263 @@ class TestTextToSpeechHandler:
         assert len(files) == 0
 
 
-class TestListVoicesHandler:
+def _mock_search_voices(voices=None):
+    """Mock for SupertoneClient.search_voices."""
+    if voices is None:
+        voices = [
+            {
+                "voice_id": "sujin-01",
+                "name": "Sujin",
+                "supported_languages": ["ko", "en"],
+                "supported_styles": ["neutral", "happy"],
+            },
+            {
+                "voice_id": "yuki-01",
+                "name": "Yuki",
+                "supported_languages": ["ja"],
+                "supported_styles": ["neutral"],
+            },
+            {
+                "voice_id": "minho-01",
+                "name": "Minho",
+                "supported_languages": ["ko"],
+                "supported_styles": ["neutral", "sad"],
+            },
+        ]
+    return AsyncMock(return_value=voices)
+
+
+class TestSearchVoiceHandler:
+    """Tests for the search_voice handler (replaces list_voices in v0.2)."""
+
     @pytest.mark.asyncio
     async def test_no_filter_returns_all(self):
+        """AC: search_voice() with no parameters returns all voices in numbered list."""
         env = {"SUPERTONE_API_KEY": "key"}
         with (
             patch.dict(os.environ, env),
             patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.get_voices = _mock_get_voices()
+            inst.search_voices = _mock_search_voices()
             inst.aclose = AsyncMock()
 
-            result = await list_voices()
+            result = await search_voice()
 
+        # Header should NOT include "Filters applied:" when no filters set
+        assert "Filters applied" not in result
         assert "Found 3 voices:" in result
-        assert "Sujin" in result
-        assert "Yuki" in result
-        assert "Minho" in result
+        assert "1. Name: Sujin" in result
+        assert "2. Name: Yuki" in result
+        assert "3. Name: Minho" in result
+        # Mock called with all None filters
+        inst.search_voices.assert_called_once_with(
+            name=None,
+            description=None,
+            language=None,
+            gender=None,
+            age=None,
+            use_case=None,
+            style=None,
+            model=None,
+        )
 
     @pytest.mark.asyncio
-    async def test_language_filter(self):
+    async def test_single_filter_passes_through(self):
+        """AC: a single filter is forwarded to the SDK call."""
         env = {"SUPERTONE_API_KEY": "key"}
         with (
             patch.dict(os.environ, env),
             patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.get_voices = _mock_get_voices()
+            inst.search_voices = _mock_search_voices(
+                voices=[
+                    {
+                        "voice_id": "v1",
+                        "name": "V1",
+                        "supported_languages": ["ko"],
+                        "supported_styles": ["neutral"],
+                    }
+                ]
+            )
             inst.aclose = AsyncMock()
 
-            result = await list_voices(language="ko")
+            result = await search_voice(gender="female")
 
-        assert "Found 2 voices matching language: ko" in result
-        assert "Sujin" in result
-        assert "Minho" in result
-        assert "Yuki" not in result
+        inst.search_voices.assert_called_once_with(
+            name=None,
+            description=None,
+            language=None,
+            gender="female",
+            age=None,
+            use_case=None,
+            style=None,
+            model=None,
+        )
+        assert "Filters applied: gender=female" in result
+        assert "Found 1 voices" in result
 
     @pytest.mark.asyncio
-    async def test_empty_result(self):
+    async def test_multiple_filters_pass_through_and_show_in_header(self):
+        """AC: multiple filters reach the SDK and appear in the header line."""
         env = {"SUPERTONE_API_KEY": "key"}
         with (
             patch.dict(os.environ, env),
             patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.get_voices = _mock_get_voices(voices=[])
+            inst.search_voices = _mock_search_voices()
             inst.aclose = AsyncMock()
 
-            result = await list_voices()
+            result = await search_voice(gender="female", language="ko")
+
+        inst.search_voices.assert_called_once_with(
+            name=None,
+            description=None,
+            language="ko",
+            gender="female",
+            age=None,
+            use_case=None,
+            style=None,
+            model=None,
+        )
+        # Both filters must appear in the header (order independent)
+        first_line = result.splitlines()[0]
+        assert first_line.startswith("Filters applied:")
+        assert "gender=female" in first_line
+        assert "language=ko" in first_line
+
+    @pytest.mark.asyncio
+    async def test_all_filters_pass_through(self):
+        """All eight filters are forwarded with the correct keyword names."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_voices = _mock_search_voices(voices=[])
+            inst.aclose = AsyncMock()
+
+            await search_voice(
+                language="ko",
+                gender="female",
+                age="young_adult",
+                use_case="narration",
+                style="happy",
+                model="sona_speech_1",
+                name="Su",
+                description="warm",
+            )
+
+        inst.search_voices.assert_called_once_with(
+            name="Su",
+            description="warm",
+            language="ko",
+            gender="female",
+            age="young_adult",
+            use_case="narration",
+            style="happy",
+            model="sona_speech_1",
+        )
+
+    @pytest.mark.asyncio
+    async def test_empty_result_with_filter(self):
+        """AC: with filters and 0 results returns the filtered empty string."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_voices = _mock_search_voices(voices=[])
+            inst.aclose = AsyncMock()
+
+            result = await search_voice(gender="zzz")
+
+        assert result == "No voices found matching the filters."
+
+    @pytest.mark.asyncio
+    async def test_empty_result_without_filter(self):
+        """No filters + 0 results falls back to plain 'No voices found.'"""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_voices = _mock_search_voices(voices=[])
+            inst.aclose = AsyncMock()
+
+            result = await search_voice()
 
         assert result == "No voices found."
 
     @pytest.mark.asyncio
-    async def test_invalid_language_filter(self):
-        env = {"SUPERTONE_API_KEY": "key"}
-        with patch.dict(os.environ, env):
-            result = await list_voices(language="zz")
-        assert 'Invalid language: "zz"' in result
-
-    @pytest.mark.asyncio
-    async def test_auth_error_caught(self):
+    async def test_invalid_language_filter_short_circuits(self):
+        """validate_language is still applied when a language filter is provided."""
         env = {"SUPERTONE_API_KEY": "key"}
         with (
             patch.dict(os.environ, env),
             patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.get_voices = AsyncMock(side_effect=SupertoneAuthError())
+            inst.search_voices = _mock_search_voices()
             inst.aclose = AsyncMock()
 
-            result = await list_voices()
+            result = await search_voice(language="zz")
+
+        assert 'Invalid language: "zz"' in result
+        # SDK must NOT be called when language validation fails
+        inst.search_voices.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_auth_error_caught(self):
+        """AC: API 401 returns the standard auth error string."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_voices = AsyncMock(side_effect=SupertoneAuthError())
+            inst.aclose = AsyncMock()
+
+            result = await search_voice()
 
         expected = "Authentication failed. Please verify your SUPERTONE_API_KEY."
         assert result == expected
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_error_caught(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_voices = AsyncMock(side_effect=SupertoneRateLimitError())
+            inst.aclose = AsyncMock()
+
+            result = await search_voice()
+
+        assert "Rate limit exceeded" in result
+
+    @pytest.mark.asyncio
+    async def test_server_error_caught(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_voices = AsyncMock(side_effect=SupertoneServerError(502))
+            inst.aclose = AsyncMock()
+
+            result = await search_voice()
+
+        assert "server error (502)" in result
 
     @pytest.mark.asyncio
     async def test_connection_error_caught(self):
@@ -962,9 +1189,48 @@ class TestListVoicesHandler:
             patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.get_voices = AsyncMock(side_effect=SupertoneConnectionError())
+            inst.search_voices = AsyncMock(side_effect=SupertoneConnectionError())
             inst.aclose = AsyncMock()
 
-            result = await list_voices()
+            result = await search_voice()
 
         assert "Failed to connect" in result
+
+    @pytest.mark.asyncio
+    async def test_missing_api_key_returns_error(self):
+        """Without SUPERTONE_API_KEY, return the validation msg without hitting SDK."""
+        with patch.dict(os.environ, {}, clear=True):
+            result = await search_voice()
+        assert "SUPERTONE_API_KEY" in result
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_success(self):
+        """aclose() is invoked on the happy path (no SDK leaks)."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_voices = _mock_search_voices()
+            inst.aclose = AsyncMock()
+
+            await search_voice()
+
+        inst.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_error(self):
+        """aclose() is invoked even when the SDK raises."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.search_voices = AsyncMock(side_effect=SupertoneConnectionError())
+            inst.aclose = AsyncMock()
+
+            await search_voice()
+
+        inst.aclose.assert_awaited_once()

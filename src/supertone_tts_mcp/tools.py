@@ -219,15 +219,37 @@ def format_tts_metadata(
 
 
 def format_voice_list(
-    voices: list[VoiceInfo], language_filter: str | None = None
+    voices: list[VoiceInfo],
+    language_filter: str | None = None,
+    filters: dict[str, str | None] | None = None,
 ) -> str:
-    """Format a list of VoiceInfo as plain text per UX spec."""
+    """Format a list of VoiceInfo as plain text per UX spec.
+
+    When `filters` is provided (the v0.2 path used by `search_voice`), any
+    non-None entries are rendered as a "Filters applied: k=v, ..." prefix line
+    above the standard list. An empty result with active filters returns
+    "No voices found matching the filters." per the v0.2 UX spec.
+
+    The legacy `language_filter` argument is retained for backward-compatible
+    callers (none remain after ISSUE-015, kept for safety/test coverage).
+    """
+    active_filters: dict[str, str] = {}
+    if filters:
+        active_filters = {k: v for k, v in filters.items() if v is not None}
+
     if not voices:
+        if active_filters:
+            return "No voices found matching the filters."
         if language_filter:
             return f"No voices found matching language: {language_filter}."
         return "No voices found."
 
-    if language_filter:
+    if active_filters:
+        filter_line = "Filters applied: " + ", ".join(
+            f"{k}={v}" for k, v in active_filters.items()
+        )
+        header = f"{filter_line}\nFound {len(voices)} voices:"
+    elif language_filter:
         header = f"Found {len(voices)} voices matching language: {language_filter}"
     else:
         header = f"Found {len(voices)} voices:"
@@ -424,12 +446,29 @@ async def text_to_speech(
     ]
 
 
-async def list_voices(language: str | None = None) -> str:
-    """List available Supertone TTS voices.
+async def search_voice(
+    language: str | None = None,
+    gender: str | None = None,
+    age: str | None = None,
+    use_case: str | None = None,
+    style: str | None = None,
+    model: str | None = None,
+    name: str | None = None,
+    description: str | None = None,
+) -> str:
+    """Search the Supertone voice catalog with optional server-side filters.
+
+    All filters are AND-combined and forwarded to the SDK; enum membership is
+    validated server-side (per ISSUE-015 Implementation Notes). The single
+    exception is `language`, which we still validate client-side against
+    `SUPPORTED_LANGUAGES` to give the LLM/user a precise error message.
+
+    With no filters this is equivalent to the legacy `list_voices` behavior.
 
     Returns a plain-text response string (never raises to the caller).
     """
-    # Validate language filter
+    # Client-side validation: language only (enum-style filters are passed
+    # through; the SDK / API is authoritative).
     if language is not None:
         try:
             validate_language(language)
@@ -445,7 +484,16 @@ async def list_voices(language: str | None = None) -> str:
     # Call API
     client = SupertoneClient(api_key=api_key)
     try:
-        voice_dicts = await client.get_voices()
+        voice_dicts = await client.search_voices(
+            name=name,
+            description=description,
+            language=language,
+            gender=gender,
+            age=age,
+            use_case=use_case,
+            style=style,
+            model=model,
+        )
     except SupertoneAuthError:
         return "Authentication failed. Please verify your SUPERTONE_API_KEY."
     except SupertoneRateLimitError:
@@ -470,8 +518,15 @@ async def list_voices(language: str | None = None) -> str:
         for v in voice_dicts
     ]
 
-    # Filter by language
-    if language is not None:
-        voices = [v for v in voices if language in v.supported_languages]
+    filters: dict[str, str | None] = {
+        "name": name,
+        "description": description,
+        "language": language,
+        "gender": gender,
+        "age": age,
+        "use_case": use_case,
+        "style": style,
+        "model": model,
+    }
 
-    return format_voice_list(voices, language_filter=language)
+    return format_voice_list(voices, filters=filters)

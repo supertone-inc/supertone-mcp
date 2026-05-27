@@ -5,9 +5,11 @@ MCP server for [Supertone](https://supertone.ai) TTS API. Convert text to speech
 ## Features
 
 - **text_to_speech** -- Convert text (up to 300 characters) to audio files (MP3/WAV)
-- **list_voices** -- Browse available voices with language and style filtering
+- **search_voice** -- Search the voice catalog with filters (language, gender, age, use_case, style, model, name, description)
 - Speed control (0.5x - 2.0x), pitch adjustment (-12 to +12 semitones), emotion styles
 - Supports Korean, English, and Japanese
+
+> **Breaking change in v0.2:** `list_voices` has been removed and replaced by `search_voice`. To reproduce the old behavior, call `search_voice` with no arguments.
 
 ## Installation
 
@@ -80,8 +82,10 @@ Language: en
 Format: mp3
 ```
 
-**List available voices:**
-> "What Korean voices are available?"
+**Search voices:**
+> "Find me a female Korean voice for narration."
+
+This calls `search_voice(language="ko", gender="female", use_case="narration")` and returns a numbered list whose first line is `Filters applied: language=ko, gender=female, use_case=narration`.
 
 **Adjust parameters:**
 > "Say 'good morning' in Japanese, slower and with a happy tone"
@@ -93,18 +97,27 @@ Format: mp3
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `text` | string | Yes | -- | Text to convert (max 300 characters) |
-| `voice_id` | string | No | default voice | Voice identifier (use `list_voices` to browse) |
+| `voice_id` | string | No | default voice | Voice identifier (use `search_voice` to browse) |
 | `language` | string | No | `ko` | Language: `ko`, `en`, or `ja` |
 | `output_format` | string | No | `mp3` | Format: `mp3` or `wav` |
 | `speed` | float | No | `1.0` | Speed: 0.5 to 2.0 |
 | `pitch_shift` | int | No | `0` | Pitch: -12 to +12 semitones |
 | `style` | string | No | -- | Emotion style (e.g., `neutral`, `happy`) |
 
-### list_voices
+### search_voice
+
+All parameters are optional. When all are omitted the full voice catalog is returned (equivalent to the removed `list_voices`). When any parameter is set, the response starts with a `Filters applied: ...` line.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `language` | string | No | -- | Filter by language: `ko`, `en`, or `ja` |
+| `language` | string | No | -- | Language code (e.g., `ko`, `en`, `ja`) |
+| `gender` | string | No | -- | Voice gender (e.g., `male`, `female`) |
+| `age` | string | No | -- | Age bracket (e.g., `young_adult`, `child`) |
+| `use_case` | string | No | -- | Use case keyword (e.g., `narration`, `advertisement`) |
+| `style` | string | No | -- | Emotion style (e.g., `neutral`, `happy`) |
+| `model` | string | No | -- | TTS model identifier (e.g., `sona_speech_1`) |
+| `name` | string | No | -- | Voice name (partial match) |
+| `description` | string | No | -- | Voice description (partial match) |
 
 ## Development
 
