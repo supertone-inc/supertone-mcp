@@ -63,10 +63,10 @@ Add to your Cursor MCP settings (same JSON shape as above).
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `SUPERTONE_API_KEY` | Yes | — | Your Supertone API key |
-| `SUPERTONE_MCP_VOICE_ID` | No | preset Korean voice | Default `voice_id` for `text_to_speech` / `predict_duration` |
+| `SUPERTONE_MCP_VOICE_ID` | No | preset voice (Aiden, multilingual) | Default `voice_id` for `text_to_speech` / `predict_duration` |
 | `SUPERTONE_OUTPUT_DIR` | No | `~/supertone-tts-output/` | Directory where audio files are saved |
 | `SUPERTONE_MCP_OUTPUT_MODE` | No | `files` | One of `files`, `resources`, `both`. Controls how `text_to_speech` returns audio (see below) |
-| `SUPERTONE_MCP_AUTOPLAY` | No | unset | Set `1`/`true` to auto-play generated audio on macOS via `afplay` |
+| `SUPERTONE_MCP_AUTOPLAY` | No | `true` | Auto-play generated audio on macOS via `afplay` (enabled by default). Set `false`/`0`/`no` to disable |
 
 ### Output modes (`text_to_speech`)
 
