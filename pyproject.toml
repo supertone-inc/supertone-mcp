@@ -26,8 +26,8 @@ dependencies = [
 supertone-tts-mcp = "supertone_tts_mcp.server:main"
 
 [project.urls]
-Homepage = "https://github.com/pillip/supertone-mcp"
-Repository = "https://github.com/pillip/supertone-mcp"
+Homepage = "https://github.com/supertone-inc/supertone-mcp"
+Repository = "https://github.com/supertone-inc/supertone-mcp"
 
 [dependency-groups]
 dev = [
@@ -42,6 +42,13 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/supertone_tts_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/README.md",
+    "/pyproject.toml",
+]
 
 [tool.pytest.ini_options]
 minversion = "7.0"
