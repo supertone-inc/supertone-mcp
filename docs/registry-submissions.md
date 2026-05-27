@@ -92,6 +92,7 @@ pip install supertone-mcp
 | **Glama** (~25k) | Form, manually reviewed; also indexes GitHub | Submit the repo URL at https://glama.ai/mcp/servers |
 | **mcp.so** | GitHub issue / Submit button | Submit at https://mcp.so (Submit in nav) — paste metadata + Claude Desktop snippet |
 | **Awesome MCP Servers** | PR to GitHub list / form | See the entry draft below; submit at https://mcpservers.org/submit or PR to `punkpeye/awesome-mcp-servers` |
+| **cursor.directory** | Website, auto-detects repo | Go to https://cursor.directory/plugins/new → sign in (GitHub/Google) → paste `https://github.com/supertone-inc/supertone-mcp` → Submit. Auto-detects the MCP server from the repo-root **`.mcp.json`** (added to this repo). Auto-reviewed by a Cursor SDK agent. |
 | **MCP Server Hub** | Form | https://mcpserverhub.net/submit |
 | **Smithery** | Hosted HTTP URL only | **Not pursued.** Smithery now requires a URL to a *running* HTTP MCP server ("Smithery requires a URL to a running server, not a GitHub repository"); it no longer lists stdio/GitHub-repo servers. supertone-mcp is local stdio (no hosted endpoint), and a hosted instance would need its own API-key/cost model. Revisit only if we deploy a Streamable-HTTP server. |
 
