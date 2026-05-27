@@ -93,7 +93,7 @@ pip install supertone-mcp
 | **mcp.so** | GitHub issue / Submit button | Submit at https://mcp.so (Submit in nav) — paste metadata + Claude Desktop snippet |
 | **Awesome MCP Servers** | PR to GitHub list / form | See the entry draft below; submit at https://mcpservers.org/submit or PR to `punkpeye/awesome-mcp-servers` |
 | **MCP Server Hub** | Form | https://mcpserverhub.net/submit |
-| **Smithery** | `smithery.yaml` + connect repo | `smithery.yaml` added to repo root. Connect the repo at https://smithery.ai/new. NOTE: Smithery *hosted* deployment for Python needs a custom HTTP container; this config lists supertone-mcp as a **local** stdio server (runs via `uvx` on the user's machine). |
+| **Smithery** | Hosted HTTP URL only | **Not pursued.** Smithery now requires a URL to a *running* HTTP MCP server ("Smithery requires a URL to a running server, not a GitHub repository"); it no longer lists stdio/GitHub-repo servers. supertone-mcp is local stdio (no hosted endpoint), and a hosted instance would need its own API-key/cost model. Revisit only if we deploy a Streamable-HTTP server. |
 
 > Tip: aggregators scrape the official registry on an infrequent schedule
 > (≈hourly+) and keep their own index, so propagation is not instant.
