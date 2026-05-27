@@ -2361,3 +2361,485 @@ class TestPreviewVoiceHandler:
             await preview_voice("v1")
 
         inst.aclose.assert_awaited_once()
+
+
+# --- ISSUE-018: predict_duration handler ---
+
+
+class TestPredictDurationHandler:
+    """Tests for the `predict_duration(text, ...)` handler."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_returns_formatted_duration(self):
+        """AC #1: mocked client returns 2.34 => exact UX spec output."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock(return_value=2.34)
+            inst.aclose = AsyncMock()
+
+            result = await predict_duration(text="hi")
+
+        assert result == (
+            "Predicted duration: 2.34s (credit usage is proportional to duration)."
+        )
+
+    @pytest.mark.asyncio
+    async def test_happy_path_uses_two_decimal_format(self):
+        """Duration formatted to two decimals even when value is whole."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock(return_value=3.0)
+            inst.aclose = AsyncMock()
+
+            result = await predict_duration(text="hello world")
+
+        # Per UX spec §4.7: "Predicted duration: 2.34s ..." — two decimals.
+        assert result.startswith("Predicted duration: 3.00s")
+        assert result.endswith("(credit usage is proportional to duration).")
+
+    @pytest.mark.asyncio
+    async def test_text_over_300_chars_returns_validation_error_without_api_call(self):
+        """AC #2: text length >300 chars rejected before any API call."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        long_text = "a" * 301
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await predict_duration(text=long_text)
+
+        assert "exceeds the maximum length of 300 characters" in result
+        assert "received: 301" in result
+        MC.assert_not_called()
+        inst.predict_duration.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_text_exactly_300_chars_passes_validation(self):
+        """Boundary: 300 chars is allowed (edge case per UX spec §4.1)."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        text_300 = "a" * 300
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock(return_value=12.5)
+            inst.aclose = AsyncMock()
+
+            result = await predict_duration(text=text_300)
+
+        # Validation passed and the API was invoked.
+        inst.predict_duration.assert_awaited_once()
+        assert result.startswith("Predicted duration: 12.50s")
+
+    @pytest.mark.asyncio
+    async def test_empty_text_returns_validation_error_without_api_call(self):
+        """Empty text rejected before any API call (consistent with text_to_speech)."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await predict_duration(text="")
+
+        assert result == "Text must not be empty."
+        MC.assert_not_called()
+        inst.predict_duration.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_invalid_language_returns_validation_error(self):
+        """AC #3: invalid language rejected before any API call."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await predict_duration(text="hi", language="zz")
+
+        assert 'Invalid language: "zz"' in result
+        MC.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_invalid_output_format_returns_validation_error(self):
+        """AC #3: invalid output_format rejected before any API call."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await predict_duration(text="hi", output_format="flac")
+
+        assert 'Invalid output format: "flac"' in result
+        MC.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_speed_out_of_range_returns_validation_error(self):
+        """AC #3: speed outside [0.5, 2.0] rejected before any API call."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await predict_duration(text="hi", speed=5.0)
+
+        assert "Speed must be between 0.5 and 2.0" in result
+        assert "received: 5.0" in result
+        MC.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_pitch_shift_out_of_range_returns_validation_error(self):
+        """AC #3: pitch_shift outside [-24, +24] rejected before any API call."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await predict_duration(text="hi", pitch_shift=99)
+
+        assert "Pitch shift must be between" in result
+        assert "received: 99" in result
+        MC.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_invalid_model_returns_validation_error(self):
+        """Invalid model is validated client-side (same as text_to_speech)."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await predict_duration(text="hi", model="bogus_model")
+
+        assert 'Invalid model: "bogus_model"' in result
+        MC.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_default_voice_id_resolves_from_env(self):
+        """Default voice_id uses the same env-var resolution as text_to_speech."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {
+            "SUPERTONE_API_KEY": "key",
+            "SUPERTONE_MCP_VOICE_ID": "env-voice-99",
+        }
+        with (
+            patch.dict(os.environ, env, clear=False),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock(return_value=1.0)
+            inst.aclose = AsyncMock()
+
+            await predict_duration(text="hi")
+
+        # The SDK wrapper was called with the env-resolved voice_id.
+        call_kwargs = inst.predict_duration.call_args.kwargs
+        assert call_kwargs["voice_id"] == "env-voice-99"
+
+    @pytest.mark.asyncio
+    async def test_default_voice_id_falls_back_to_constant(self):
+        """When no env override, default voice_id is the project constant."""
+        from supertone_tts_mcp.constants import DEFAULT_VOICE_ID
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock(return_value=1.0)
+            inst.aclose = AsyncMock()
+
+            await predict_duration(text="hi")
+
+        call_kwargs = inst.predict_duration.call_args.kwargs
+        assert call_kwargs["voice_id"] == DEFAULT_VOICE_ID
+
+    @pytest.mark.asyncio
+    async def test_explicit_voice_id_overrides_env(self):
+        """Caller-supplied voice_id wins over the env default."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {
+            "SUPERTONE_API_KEY": "key",
+            "SUPERTONE_MCP_VOICE_ID": "env-voice",
+        }
+        with (
+            patch.dict(os.environ, env, clear=False),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock(return_value=1.0)
+            inst.aclose = AsyncMock()
+
+            await predict_duration(text="hi", voice_id="explicit-voice")
+
+        call_kwargs = inst.predict_duration.call_args.kwargs
+        assert call_kwargs["voice_id"] == "explicit-voice"
+
+    @pytest.mark.asyncio
+    async def test_defaults_propagate_to_sdk_call(self):
+        """When optional params are omitted, project defaults flow to the SDK call."""
+        from supertone_tts_mcp.constants import (
+            DEFAULT_LANGUAGE,
+            DEFAULT_MODEL,
+            DEFAULT_PITCH_SHIFT,
+            DEFAULT_SPEED,
+        )
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock(return_value=1.0)
+            inst.aclose = AsyncMock()
+
+            await predict_duration(text="hi")
+
+        call_kwargs = inst.predict_duration.call_args.kwargs
+        assert call_kwargs["language"] == DEFAULT_LANGUAGE
+        assert call_kwargs["model"] == DEFAULT_MODEL
+        assert call_kwargs["speed"] == DEFAULT_SPEED
+        assert call_kwargs["pitch_shift"] == DEFAULT_PITCH_SHIFT
+        # output_format default for predict_duration matches the SDK default (wav)
+        assert call_kwargs["output_format"] == "wav"
+        # style default is None
+        assert call_kwargs["style"] is None
+
+    @pytest.mark.asyncio
+    async def test_explicit_params_pass_through(self):
+        """All explicit params flow through to the SDK wrapper."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock(return_value=1.0)
+            inst.aclose = AsyncMock()
+
+            await predict_duration(
+                text="hello",
+                voice_id="custom-voice",
+                language="ja",
+                output_format="mp3",
+                model="sona_speech_2",
+                speed=1.5,
+                pitch_shift=-2,
+                style="happy",
+            )
+
+        call_kwargs = inst.predict_duration.call_args.kwargs
+        assert call_kwargs["text"] == "hello"
+        assert call_kwargs["voice_id"] == "custom-voice"
+        assert call_kwargs["language"] == "ja"
+        assert call_kwargs["output_format"] == "mp3"
+        assert call_kwargs["model"] == "sona_speech_2"
+        assert call_kwargs["speed"] == 1.5
+        assert call_kwargs["pitch_shift"] == -2
+        assert call_kwargs["style"] == "happy"
+
+    @pytest.mark.asyncio
+    async def test_missing_api_key_returns_error_without_api_call(self):
+        """API key validation runs before any client construction."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("supertone_tts_mcp.tools.SupertoneClient") as MC:
+                result = await predict_duration(text="hi")
+                MC.assert_not_called()
+
+        assert "SUPERTONE_API_KEY" in result
+
+    @pytest.mark.asyncio
+    async def test_auth_error_returns_formatted_string(self):
+        """AC #4: SDK 401/403 -> formatted auth error."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock(side_effect=SupertoneAuthError())
+            inst.aclose = AsyncMock()
+
+            result = await predict_duration(text="hi")
+
+        assert result == "Authentication failed. Please verify your SUPERTONE_API_KEY."
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_error_returns_formatted_string(self):
+        """AC #5: SDK 429 -> formatted rate-limit error."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock(side_effect=SupertoneRateLimitError())
+            inst.aclose = AsyncMock()
+
+            result = await predict_duration(text="hi")
+
+        assert result == "Rate limit exceeded. Please wait and try again."
+
+    @pytest.mark.asyncio
+    async def test_server_error_returns_formatted_string(self):
+        """SDK 5xx -> formatted server error including the status code."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock(side_effect=SupertoneServerError(503))
+            inst.aclose = AsyncMock()
+
+            result = await predict_duration(text="hi")
+
+        assert result == ("Supertone API server error (503). Please try again later.")
+
+    @pytest.mark.asyncio
+    async def test_connection_error_returns_formatted_string(self):
+        """Per RL-002: the handler covers the connection-error branch."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock(side_effect=SupertoneConnectionError())
+            inst.aclose = AsyncMock()
+
+            result = await predict_duration(text="hi")
+
+        assert result == (
+            "Failed to connect to Supertone API. Please check your network connection."
+        )
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_success(self):
+        """The client is always closed after a successful call."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock(return_value=1.0)
+            inst.aclose = AsyncMock()
+
+            await predict_duration(text="hi")
+
+        inst.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_error(self):
+        """The client is always closed even when the SDK call fails."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock(side_effect=SupertoneConnectionError())
+            inst.aclose = AsyncMock()
+
+            await predict_duration(text="hi")
+
+        inst.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_duration_none_renders_unknown_safely(self):
+        """If the SDK omits `duration` (it is Optional), handler does not crash."""
+        from supertone_tts_mcp.tools import predict_duration
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.predict_duration = AsyncMock(return_value=None)
+            inst.aclose = AsyncMock()
+
+            result = await predict_duration(text="hi")
+
+        # The exact wording is internal — but the response MUST be a string
+        # and MUST mention duration somewhere, without raising.
+        assert isinstance(result, str)
+        assert "duration" in result.lower()

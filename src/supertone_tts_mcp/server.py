@@ -176,6 +176,54 @@ async def preview_voice(
     )
 
 
+@mcp.tool(
+    name="predict_duration",
+    description=(
+        "Predict the expected output audio duration in seconds for a given "
+        "text WITHOUT producing any audio file. "
+        "Accepts the same parameters as text_to_speech and applies the "
+        "same 300-character limit. "
+        "Use this to estimate credit cost before synthesizing — "
+        "credit usage is proportional to the predicted duration."
+    ),
+)
+async def predict_duration(
+    text: str,
+    voice_id: str | None = None,
+    language: str | None = None,
+    output_format: str | None = None,
+    model: str | None = None,
+    speed: float | None = None,
+    pitch_shift: int | None = None,
+    style: str | None = None,
+) -> str:
+    """Predict audio duration for a TTS request without synthesizing audio.
+
+    Args:
+        text: The text to estimate duration for. Required.
+            Maximum 300 characters (no auto-chunking, unlike text_to_speech).
+        voice_id: Voice to estimate for. If omitted, the configured default
+            voice is used (same env-var resolution as text_to_speech).
+        language: Language code (e.g., "ko" default, "en", "ja").
+        output_format: Audio format the estimate corresponds to: "wav"
+            (default; matches the SDK default) or "mp3".
+        model: TTS model identifier (default: "sona_speech_1").
+        speed: Speech speed. 0.5 (slow) to 2.0 (fast). Default: 1.0.
+        pitch_shift: Pitch adjustment in semitones. -24 to +24. Default: 0.
+        style: Emotion or tone of the voice (optional, voice-dependent).
+    """
+    return await tools.predict_duration(
+        text=text,
+        voice_id=voice_id,
+        language=language,
+        output_format=output_format,
+        model=model,
+        speed=speed,
+        pitch_shift=pitch_shift,
+        style=style,
+    )
+
+
 def main() -> None:
     """Start the Supertone TTS MCP server."""
     mcp.run(transport="stdio")
