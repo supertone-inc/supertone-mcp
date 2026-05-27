@@ -5,7 +5,7 @@ import re
 
 import pytest
 
-from supertone_tts_mcp.constants import (
+from supertone_mcp.constants import (
     DEFAULT_FORMAT,
     DEFAULT_LANGUAGE,
     DEFAULT_MODEL,
@@ -23,7 +23,7 @@ from supertone_tts_mcp.constants import (
     SUPPORTED_MODELS,
     TEXT_MAX_LENGTH,
 )
-from supertone_tts_mcp.exceptions import (
+from supertone_mcp.exceptions import (
     SupertoneAPIError,
     SupertoneAuthError,
     SupertoneConnectionError,
@@ -31,7 +31,7 @@ from supertone_tts_mcp.exceptions import (
     SupertoneRateLimitError,
     SupertoneServerError,
 )
-from supertone_tts_mcp.models import (
+from supertone_mcp.models import (
     TTSRequest,
     TTSResponse,
     VoiceInfo,

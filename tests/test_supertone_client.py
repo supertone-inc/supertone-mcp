@@ -12,18 +12,18 @@ from supertone.errors.toomanyrequestserrorresponse import TooManyRequestsErrorRe
 from supertone.errors.unauthorizederrorresponse import UnauthorizedErrorResponse
 from supertone.models import GetAPICharacterResponseData
 
-from supertone_tts_mcp.exceptions import (
+from supertone_mcp.exceptions import (
     SupertoneAuthError,
     SupertoneConnectionError,
     SupertoneRateLimitError,
     SupertoneServerError,
 )
-from supertone_tts_mcp.supertone_client import SupertoneClient
+from supertone_mcp.supertone_client import SupertoneClient
 
 
 @pytest.fixture
 def client():
-    with patch("supertone_tts_mcp.supertone_client.Supertone") as MockSDK:
+    with patch("supertone_mcp.supertone_client.Supertone") as MockSDK:
         sdk_instance = MockSDK.return_value
         sdk_instance.text_to_speech = MagicMock()
         sdk_instance.voices = MagicMock()
@@ -891,7 +891,7 @@ class TestVoiceDetailDictShape:
     and match the SDK GetCharacterByIDResponse / GetCreditBalanceResponse shapes."""
 
     def test_voice_detail_dict_importable(self):
-        from supertone_tts_mcp.models import VoiceDetailDict
+        from supertone_mcp.models import VoiceDetailDict
 
         # TypedDict instances are dicts at runtime; verify required keys can be set.
         sample_value: VoiceDetailDict = {
@@ -910,7 +910,7 @@ class TestVoiceDetailDictShape:
         assert sample_value["supported_languages"] == ["en"]
 
     def test_sample_dict_importable(self):
-        from supertone_tts_mcp.models import SampleDict
+        from supertone_mcp.models import SampleDict
 
         s: SampleDict = {
             "language": "en",
@@ -922,7 +922,7 @@ class TestVoiceDetailDictShape:
         assert s["url"].startswith("https://")
 
     def test_credit_balance_dict_importable(self):
-        from supertone_tts_mcp.models import CreditBalanceDict
+        from supertone_mcp.models import CreditBalanceDict
 
         c: CreditBalanceDict = {"balance": 100.0}
         assert c["balance"] == 100.0
@@ -1160,7 +1160,7 @@ class TestCreateClonedVoice:
 
     @pytest.fixture
     def cv_client(self):
-        with patch("supertone_tts_mcp.supertone_client.Supertone") as MockSDK:
+        with patch("supertone_mcp.supertone_client.Supertone") as MockSDK:
             sdk_instance = MockSDK.return_value
             sdk_instance.text_to_speech = MagicMock()
             sdk_instance.voices = MagicMock()
@@ -1382,7 +1382,7 @@ def _make_update_custom_voice_response(
 @pytest.fixture
 def cv_crud_client():
     """A SupertoneClient fixture that mocks the custom_voices namespace."""
-    with patch("supertone_tts_mcp.supertone_client.Supertone") as MockSDK:
+    with patch("supertone_mcp.supertone_client.Supertone") as MockSDK:
         sdk_instance = MockSDK.return_value
         sdk_instance.text_to_speech = MagicMock()
         sdk_instance.voices = MagicMock()

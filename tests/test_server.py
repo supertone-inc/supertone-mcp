@@ -2,7 +2,7 @@
 
 import pathlib
 
-from supertone_tts_mcp.server import mcp
+from supertone_mcp.server import mcp
 
 
 class TestToolRegistration:
@@ -433,7 +433,7 @@ class TestToolRegistration:
 
 class TestMainFunction:
     def test_main_is_callable(self):
-        from supertone_tts_mcp.server import main
+        from supertone_mcp.server import main
 
         assert callable(main)
 
@@ -443,7 +443,7 @@ class TestMainModule:
         main_path = (
             pathlib.Path(__file__).parent.parent
             / "src"
-            / "supertone_tts_mcp"
+            / "supertone_mcp"
             / "__main__.py"
         )
         assert main_path.exists()
@@ -452,7 +452,7 @@ class TestMainModule:
         source = (
             pathlib.Path(__file__).parent.parent
             / "src"
-            / "supertone_tts_mcp"
+            / "supertone_mcp"
             / "__main__.py"
         ).read_text()
-        assert "from supertone_tts_mcp.server import main" in source
+        assert "from supertone_mcp.server import main" in source

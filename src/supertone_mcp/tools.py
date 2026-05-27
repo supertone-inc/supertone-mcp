@@ -11,7 +11,7 @@ from pathlib import Path
 from mcp.types import AudioContent, TextContent
 from mutagen import File as MutagenFile
 
-from supertone_tts_mcp.constants import (
+from supertone_mcp.constants import (
     DEFAULT_FORMAT,
     DEFAULT_LANGUAGE,
     DEFAULT_MODEL,
@@ -35,13 +35,13 @@ from supertone_tts_mcp.constants import (
     TEXT_MAX_LENGTH,
     VALID_OUTPUT_MODES,
 )
-from supertone_tts_mcp.exceptions import (
+from supertone_mcp.exceptions import (
     SupertoneAuthError,
     SupertoneConnectionError,
     SupertoneRateLimitError,
     SupertoneServerError,
 )
-from supertone_tts_mcp.models import (
+from supertone_mcp.models import (
     CreditBalanceDict,
     CustomVoiceDict,
     SampleDict,
@@ -50,7 +50,7 @@ from supertone_tts_mcp.models import (
     VoiceInfo,
     generate_output_path,
 )
-from supertone_tts_mcp.supertone_client import SupertoneClient
+from supertone_mcp.supertone_client import SupertoneClient
 
 
 def _format_int_with_commas(value: int | float) -> str:

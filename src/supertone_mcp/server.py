@@ -2,7 +2,7 @@
 
 from mcp.server.fastmcp import FastMCP
 
-from supertone_tts_mcp import tools
+from supertone_mcp import tools
 
 mcp = FastMCP("supertone-tts")
 

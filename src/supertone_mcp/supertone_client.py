@@ -11,13 +11,13 @@ from supertone.errors.no_response_error import NoResponseError
 from supertone.errors.toomanyrequestserrorresponse import TooManyRequestsErrorResponse
 from supertone.errors.unauthorizederrorresponse import UnauthorizedErrorResponse
 
-from supertone_tts_mcp.exceptions import (
+from supertone_mcp.exceptions import (
     SupertoneAuthError,
     SupertoneConnectionError,
     SupertoneRateLimitError,
     SupertoneServerError,
 )
-from supertone_tts_mcp.models import (
+from supertone_mcp.models import (
     CreditBalanceDict,
     CustomVoiceDict,
     SampleDict,

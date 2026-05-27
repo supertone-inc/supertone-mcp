@@ -1,4 +1,4 @@
-# supertone-tts-mcp
+# supertone-mcp
 
 MCP server for [Supertone](https://supertone.ai) TTS API. Generate high-quality speech, browse the voice catalog, predict synthesis cost, and create cloned voices — directly from Claude Desktop, Cursor, or any MCP-compatible client.
 
@@ -28,10 +28,10 @@ Supports Korean, English, Japanese, and 20+ other languages. Speed (0.5x–2.0x)
 
 ```bash
 # Using uvx (recommended)
-uvx supertone-tts-mcp
+uvx supertone-mcp
 
 # Using pip
-pip install supertone-tts-mcp
+pip install supertone-mcp
 ```
 
 ## Configuration
@@ -45,7 +45,7 @@ Add to `claude_desktop_config.json`:
   "mcpServers": {
     "supertone-tts": {
       "command": "uvx",
-      "args": ["supertone-tts-mcp"],
+      "args": ["supertone-mcp"],
       "env": {
         "SUPERTONE_API_KEY": "your-api-key-here"
       }
@@ -169,7 +169,7 @@ All parameters optional. With no filters → full catalog. With any filter → f
 
 ```bash
 # Clone and install
-git clone https://github.com/pillip/supertone-mcp.git
+git clone https://github.com/supertone-inc/supertone-mcp.git
 cd supertone-mcp
 uv sync
 
