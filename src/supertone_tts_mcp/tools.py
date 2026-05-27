@@ -30,6 +30,7 @@ from supertone_tts_mcp.constants import (
     SUPPORTED_FORMATS,
     SUPPORTED_LANGUAGES,
     SUPPORTED_MODELS,
+    TEXT_MAX_LENGTH,
     VALID_OUTPUT_MODES,
 )
 from supertone_tts_mcp.exceptions import (
@@ -73,8 +74,6 @@ def validate_text_max_length(text: str) -> None:
     the API. The `text_to_speech` handler intentionally skips this check
     because the synthesize SDK splits chunks transparently.
     """
-    from supertone_tts_mcp.constants import TEXT_MAX_LENGTH
-
     n = len(text)
     if n > TEXT_MAX_LENGTH:
         raise ValueError(
