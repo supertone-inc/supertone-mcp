@@ -75,3 +75,115 @@ None new. The implementation reuses the audited PR #12 client surface.
 ## Follow-ups
 
 - **F1 (Medium)** — Map a "voice not found" path through `_handle_sdk_errors` so `get_voice("nonexistent")` and `preview_voice("nonexistent")` (ISSUE-017) can both return `Voice not found: "{voice_id}".` per UX spec §4.4. A dedicated tech-debt issue would be appropriate; recorded as a Discovered Issue in `docs/sprint_state.md`.
+
+---
+
+# Review Notes — ISSUE-017 (PR #18)
+
+> Reviewer: team-lead (Opus 4.7, 1M context)
+> PR: https://github.com/pillip/supertone-mcp/pull/18
+> Branch: `feat/ISSUE-017-preview-voice`
+> Date: 2026-05-27
+> Scope: `tools.py`, `server.py`, `models.py`, `tests/test_tools.py`, `tests/test_server.py` (5 files, +759/-6)
+> Verdict: **Approve**
+> Confidence: **High**
+
+## Summary
+
+ISSUE-017 adds the `preview_voice` MCP tool plus the pure `format_voice_samples` formatter, registers the tool in the server, and applies the mandatory RL-001 fix-along to `VoiceDetailDict`. All 267 tests pass in the worktree (`uv run pytest -q`), the unit gate passes, and the previously-broken pyright errors at `tools.py:563/564/572` (introduced by PR #16's `format_voice_detail`) are resolved.
+
+## Code Review
+
+### Correctness
+
+- **Fail-fast voice_id validation** — `if not isinstance(voice_id, str) or not voice_id.strip(): return "voice_id must not be empty."` mirrors `get_voice` exactly. No API call when empty/whitespace; tests `test_empty_voice_id_returns_validation_error_without_api_call` and `test_whitespace_voice_id_returns_validation_error_without_api_call` assert `MC.assert_not_called()`.
+- **Filter semantics** — AND-combined exact match across language/style/model. The `None` sentinel means "do not filter on this dimension." Each dimension is exercised by a dedicated test plus a combined-filter test (`test_combined_filters_narrow_correctly`).
+- **Numbering** — restarts at 1 across the *filtered* subset (per UX spec §4.6). Verified by `test_numbering_resets_at_one_for_filtered_subset`.
+- **Edge messages** — exact-string equality assertions guarantee spec compliance:
+  - `"This voice has no preview samples."` for both `samples == []` and `samples is None`.
+  - `"No matching samples for the given filters."` when filters mismatch.
+- **Sample dict access pattern** — filter step uses `s.get("language")` (defensive against malformed SDK payloads), output uses `sample['language']` (type-safe since `SampleDict` is total-True). This asymmetry is intentional and acceptable.
+- **Client lifecycle** — `aclose()` called in `finally` on both success and error paths; covered by `test_client_aclose_called_on_success` and `test_client_aclose_called_on_error`.
+
+### Patterns / Conventions
+
+- Follows the same handler shape as `get_voice` (validate → resolve api_key → instantiate client → try/except SDK errors → finally aclose → format result). Easy to spot-check.
+- Error mapping is identical to `get_voice` (4 SDK error classes → 4 plain-text strings). Per **RL-002**, the connection-error branch is explicitly tested (`test_connection_error_returns_formatted_string`).
+- Tool registration in `server.py` matches the `get_voice` pattern: `@mcp.tool(...)` decorator with a UX-spec-derived description, thin pass-through to the `tools.preview_voice` handler.
+
+### Security
+
+- No secrets or API keys echoed in any output path.
+- No stack traces propagate to the caller.
+- Input validation happens before any network I/O.
+- No new dependencies introduced.
+
+### Test Coverage
+
+- **AC #1** (no filter → all samples): `test_renders_all_samples_with_no_filters`, `test_happy_path_no_filters_returns_all_samples`.
+- **AC #2** (language filter): `test_filter_by_language_only`, `test_filter_by_language_narrows_results`; plus `test_filter_by_style_narrows`, `test_filter_by_model_narrows` for the other dimensions.
+- **AC #3** (combined filters): `test_combined_filters_narrow_correctly`.
+- **AC #4** (no-match message): `test_no_match_returns_no_matching_samples_message`, `test_no_match_filters_returns_no_matching_message`.
+- **AC #5** (no samples message): `test_empty_samples_list_returns_no_preview_samples_message`, `test_none_samples_returns_no_preview_samples_message`, `test_empty_samples_returns_no_preview_message`, `test_samples_field_absent_returns_no_preview_message`.
+- **AC #6** (empty voice_id): `test_empty_voice_id_returns_validation_error_without_api_call`, `test_whitespace_voice_id_returns_validation_error_without_api_call`.
+- **AC #7** (error paths): `test_auth_error_returns_formatted_string`, `test_rate_limit_error_returns_formatted_string`, `test_server_error_returns_formatted_string`, `test_connection_error_returns_formatted_string`, `test_missing_api_key_returns_error_without_api_call`.
+- **Server registration**: tool exists, description mentions "sample audio URLs" + "NOT play", `voice_id` required, `language/style/model` optional (6 assertions).
+
+## RL-001 Fix-Along Verification
+
+Per task instructions, applied RL-001 to `VoiceDetailDict` in `src/supertone_tts_mcp/models.py`:
+
+```diff
+-class VoiceDetailDict(TypedDict, total=False):
++class VoiceDetailDict(TypedDict):
+     ...
+-    samples: list[SampleDict]
+-    thumbnail_image_url: str
++    samples: NotRequired[list[SampleDict]]
++    thumbnail_image_url: NotRequired[str]
+```
+
+Pyright verification (run inside the worktree's venv):
+
+```
+$ uv run pyright src/supertone_tts_mcp/tools.py src/supertone_tts_mcp/models.py
+...
+5 errors, 0 warnings, 0 informations
+```
+
+Breakdown of remaining 5 errors (all pre-existing ISSUE-012-era tech debt, explicitly out-of-scope per `docs/sprint_state.md`):
+
+| File / Line | Error | Origin |
+|---|---|---|
+| tools.py:12 | `"File" is not exported from module "mutagen"` | ISSUE-012 (mutagen private import) |
+| tools.py:352 | `"output_dir" is possibly unbound` | ISSUE-012 |
+| tools.py:416 | `"parent" is not a known attribute of "None"` | ISSUE-012 |
+| tools.py:440 | `Argument of type "str \| None" cannot be assigned to parameter "file_path" of type "str"` | ISSUE-012 |
+| tools.py:450 | `Argument of type "bytes \| None" cannot be assigned to parameter "s" of type "ReadableBuffer"` | ISSUE-012 |
+
+**Critically, the three errors PR #16 introduced are GONE:**
+
+| File / Line (before this PR) | Was | Now |
+|---|---|---|
+| tools.py:563 (`detail["voice_id"]`) | `"voice_id" is not a required key... could be missing from "VoiceDetailDict"` | Clean |
+| tools.py:564 (`detail["name"]`) | same | Clean |
+| tools.py:572 (`detail["use_case"]`) | same | Clean |
+
+`pyright src/supertone_tts_mcp/models.py` alone: **0 errors**.
+
+## Test Quality
+
+All test files contain real `assert ...` statements (no `pass`-only or empty-body tests). Each test mocks `SupertoneClient` rather than touching the network. No flaky behavior introduced.
+
+## Documented Gaps (not blocking)
+
+- **RL-006 (404 mapping)** — `preview_voice("nonexistent_voice_id")` will currently bubble the raw SDK exception through `_handle_sdk_errors` (which has no 404 branch) and therefore will NOT return the UX-spec-mandated `Voice not found: "{voice_id}".` string for that scenario. This is a known gap also affecting `get_voice` (PR #16). Per the explicit task instruction, I did NOT attempt the fix in this PR — it is a separate tech-debt candidate already logged in `docs/sprint_state.md` and `docs/review_lessons.md` (RL-006).
+
+## Security Findings
+
+None. The handler does not write to disk, does not echo credentials, validates input before network I/O, and uses pre-existing typed SDK error mapping.
+
+## Verdict
+
+**Approve.** All 7 ACs covered, RL-001 fix-along verified clean, no Critical/High findings. The single documented gap (404 mapping) is explicitly out of scope.
+
