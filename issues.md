@@ -23,7 +23,7 @@
 | ISSUE-012 | ElevenLabs-style audio output modes (files/resources/both) | P1 | 0.5d | ISSUE-005 | done |
 | ISSUE-013 | Update PRD/docs for v0.2 (voice discovery + cloning) | P0 | 0.5d | none | done |
 | ISSUE-014 | Extend SupertoneClient with voice discovery methods | P0 | 0.5d | ISSUE-013 | done |
-| ISSUE-015 | Replace `list_voices` with `search_voice` tool (breaking) | P1 | 0.5d | ISSUE-014 | backlog |
+| ISSUE-015 | Replace `list_voices` with `search_voice` tool (breaking) | P1 | 0.5d | ISSUE-014 | done |
 | ISSUE-016 | Add `get_voice` + `get_credit_balance` tools | P1 | 0.5d | ISSUE-014 | backlog |
 | ISSUE-017 | Add `preview_voice` tool (returns sample URLs) | P1 | 0.5d | ISSUE-014, ISSUE-016 | backlog |
 | ISSUE-018 | Add `predict_duration` tool (client + handler) | P1 | 0.5d | ISSUE-014 | backlog |
@@ -536,6 +536,7 @@ Revert README.md changes.
 - Priority: P2
 - Estimate: 0.5d
 - Status: backlog
+- Manual: true
 - Owner:
 - Branch:
 - GH-Issue:
@@ -717,11 +718,11 @@ Revert SupertoneClient additions and corresponding tests; revert new TypedDicts 
 - PRD-Ref: FR-012, US-008
 - Priority: P1
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Branch: issue/ISSUE-015-search-voice
+- GH-Issue: https://github.com/pillip/supertone-mcp/issues/13
+- PR: https://github.com/pillip/supertone-mcp/pull/14
 - Depends-On: ISSUE-014
 
 #### Goal

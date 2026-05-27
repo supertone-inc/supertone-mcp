@@ -11,9 +11,9 @@
 | Metric | Count |
 |--------|-------|
 | Total v0.2 docs/impl issues | 8 (ISSUE-013–020) |
-| Done | 2 (ISSUE-013, ISSUE-014) |
+| Done | 3 (ISSUE-013, ISSUE-014, ISSUE-015) |
 | In progress | 0 |
-| Remaining | 6 (ISSUE-015–020) |
+| Remaining | 5 (ISSUE-016–020) |
 
 > v0.1 (ISSUE-001–010, 012) shipped. ISSUE-011 (MCP Registry + PulseMCP) is parked pending manual PyPI publish + registry form submission.
 
@@ -37,6 +37,7 @@
 |----|-------|--------|
 | #10 | docs(claude): sync PRD and ux_spec for v0.2 voice tools | ISSUE-013 |
 | #12 | feat(client): add search_voices, get_voice, get_credit_balance | ISSUE-014 |
+| #14 | feat(tools): replace list_voices with search_voice (breaking) | ISSUE-015 |
 
 ## Next Steps (v0.2)
 
@@ -63,4 +64,4 @@
 | `docs/architecture.md` | v0.2 (SDK-backed client; expanded tool surface in `tools.py`) |
 | `docs/data_model.md` | v0.1 — to be revisited if cloning needs new types |
 | `docs/test_plan.md` | v0.1 — to extend as ISSUE-014–020 land |
-| `issues.md` | ISSUE-014 shipped (PR #12 → 22c5bd4); ISSUE-015–020 queued |
+| `issues.md` | ISSUE-015 shipped (PR #14 → dcee0fd); ISSUE-016–020 queued |
