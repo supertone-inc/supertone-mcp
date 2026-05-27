@@ -11,6 +11,7 @@ from supertone.errors.no_response_error import NoResponseError
 from supertone.errors.toomanyrequestserrorresponse import TooManyRequestsErrorResponse
 from supertone.errors.unauthorizederrorresponse import UnauthorizedErrorResponse
 from supertone.models import GetAPICharacterResponseData
+
 from supertone_tts_mcp.exceptions import (
     SupertoneAuthError,
     SupertoneConnectionError,
@@ -1139,4 +1140,198 @@ class TestPredictDuration:
                 model="sona_speech_1",
                 speed=1.0,
                 pitch_shift=0,
+            )
+
+
+# ---------------------------------------------------------------------------
+# ISSUE-019: create_cloned_voice SDK wrapper
+# ---------------------------------------------------------------------------
+
+
+def _make_create_cloned_voice_response(voice_id: str = "cv_abc123"):
+    """Build a mock CreateCustomVoiceResponse."""
+    mock = MagicMock()
+    mock.voice_id = voice_id
+    return mock
+
+
+class TestCreateClonedVoice:
+    """Tests for SupertoneClient.create_cloned_voice (ISSUE-019)."""
+
+    @pytest.fixture
+    def cv_client(self):
+        with patch("supertone_tts_mcp.supertone_client.Supertone") as MockSDK:
+            sdk_instance = MockSDK.return_value
+            sdk_instance.text_to_speech = MagicMock()
+            sdk_instance.voices = MagicMock()
+            sdk_instance.usage = MagicMock()
+            sdk_instance.custom_voices = MagicMock()
+            c = SupertoneClient(api_key="test-key")
+            yield c
+
+    @pytest.mark.asyncio
+    async def test_returns_voice_id_dict(self, cv_client):
+        """Happy path: wrapper extracts the `voice_id` field from the SDK response."""
+        resp = _make_create_cloned_voice_response(voice_id="cv_abc123")
+        cv_client._sdk.custom_voices.create_cloned_voice_async = AsyncMock(
+            return_value=resp
+        )
+
+        result = await cv_client.create_cloned_voice(
+            name="MyVoice",
+            audio_bytes=b"RIFF....WAVEfmt ",
+            file_name="my-voice.wav",
+            content_type="audio/wav",
+        )
+
+        assert result == {"voice_id": "cv_abc123"}
+
+    @pytest.mark.asyncio
+    async def test_passes_files_payload_and_name_to_sdk(self, cv_client):
+        """The SDK is invoked with a Files payload built from the supplied bytes
+        and the caller's name (per architecture.md §SDK)."""
+        resp = _make_create_cloned_voice_response()
+        cv_client._sdk.custom_voices.create_cloned_voice_async = AsyncMock(
+            return_value=resp
+        )
+
+        await cv_client.create_cloned_voice(
+            name="Alpha",
+            audio_bytes=b"\x00\x01\x02",
+            file_name="alpha.mp3",
+            content_type="audio/mpeg",
+            description="alpha description",
+        )
+
+        call_kwargs = (
+            cv_client._sdk.custom_voices.create_cloned_voice_async.call_args.kwargs
+        )
+        assert call_kwargs["name"] == "Alpha"
+        assert call_kwargs["description"] == "alpha description"
+        files = call_kwargs["files"]
+        # The SDK accepts a Files BaseModel OR a FilesTypedDict (mapping).
+        # Either way, the three fields must be present and accurate.
+        if isinstance(files, dict):
+            assert files["file_name"] == "alpha.mp3"
+            assert files["content"] == b"\x00\x01\x02"
+            assert files["content_type"] == "audio/mpeg"
+        else:
+            assert files.file_name == "alpha.mp3"
+            assert files.content == b"\x00\x01\x02"
+            assert files.content_type == "audio/mpeg"
+
+    @pytest.mark.asyncio
+    async def test_description_defaults_to_none(self, cv_client):
+        """When the caller omits `description`, the SDK receives `description=None`."""
+        resp = _make_create_cloned_voice_response()
+        cv_client._sdk.custom_voices.create_cloned_voice_async = AsyncMock(
+            return_value=resp
+        )
+
+        await cv_client.create_cloned_voice(
+            name="NoDesc",
+            audio_bytes=b"x",
+            file_name="x.wav",
+            content_type="audio/wav",
+        )
+
+        call_kwargs = (
+            cv_client._sdk.custom_voices.create_cloned_voice_async.call_args.kwargs
+        )
+        assert call_kwargs["description"] is None
+
+    # --- RL-002: symmetric error-branch coverage ---
+
+    @pytest.mark.asyncio
+    async def test_unauthorized_raises_auth_error(self, cv_client):
+        cv_client._sdk.custom_voices.create_cloned_voice_async = AsyncMock(
+            side_effect=_sdk_error(UnauthorizedErrorResponse)
+        )
+        with pytest.raises(SupertoneAuthError):
+            await cv_client.create_cloned_voice(
+                name="MyVoice",
+                audio_bytes=b"x",
+                file_name="x.wav",
+                content_type="audio/wav",
+            )
+
+    @pytest.mark.asyncio
+    async def test_forbidden_raises_auth_error(self, cv_client):
+        cv_client._sdk.custom_voices.create_cloned_voice_async = AsyncMock(
+            side_effect=_sdk_error(ForbiddenErrorResponse)
+        )
+        with pytest.raises(SupertoneAuthError):
+            await cv_client.create_cloned_voice(
+                name="MyVoice",
+                audio_bytes=b"x",
+                file_name="x.wav",
+                content_type="audio/wav",
+            )
+
+    @pytest.mark.asyncio
+    async def test_429_raises_rate_limit_error(self, cv_client):
+        cv_client._sdk.custom_voices.create_cloned_voice_async = AsyncMock(
+            side_effect=_sdk_error(TooManyRequestsErrorResponse)
+        )
+        with pytest.raises(SupertoneRateLimitError):
+            await cv_client.create_cloned_voice(
+                name="MyVoice",
+                audio_bytes=b"x",
+                file_name="x.wav",
+                content_type="audio/wav",
+            )
+
+    @pytest.mark.asyncio
+    async def test_5xx_raises_server_error(self, cv_client):
+        cv_client._sdk.custom_voices.create_cloned_voice_async = AsyncMock(
+            side_effect=_sdk_error(InternalServerErrorResponse)
+        )
+        with pytest.raises(SupertoneServerError):
+            await cv_client.create_cloned_voice(
+                name="MyVoice",
+                audio_bytes=b"x",
+                file_name="x.wav",
+                content_type="audio/wav",
+            )
+
+    @pytest.mark.asyncio
+    async def test_no_response_raises_connection_error(self, cv_client):
+        """RL-002: symmetric coverage of NoResponseError."""
+        cv_client._sdk.custom_voices.create_cloned_voice_async = AsyncMock(
+            side_effect=NoResponseError("no response")
+        )
+        with pytest.raises(SupertoneConnectionError):
+            await cv_client.create_cloned_voice(
+                name="MyVoice",
+                audio_bytes=b"x",
+                file_name="x.wav",
+                content_type="audio/wav",
+            )
+
+    @pytest.mark.asyncio
+    async def test_connect_error_raises_connection_error(self, cv_client):
+        """RL-002: symmetric coverage of httpx.ConnectError."""
+        cv_client._sdk.custom_voices.create_cloned_voice_async = AsyncMock(
+            side_effect=httpx.ConnectError("refused")
+        )
+        with pytest.raises(SupertoneConnectionError):
+            await cv_client.create_cloned_voice(
+                name="MyVoice",
+                audio_bytes=b"x",
+                file_name="x.wav",
+                content_type="audio/wav",
+            )
+
+    @pytest.mark.asyncio
+    async def test_timeout_raises_connection_error(self, cv_client):
+        """RL-002: symmetric coverage of httpx.TimeoutException."""
+        cv_client._sdk.custom_voices.create_cloned_voice_async = AsyncMock(
+            side_effect=httpx.ReadTimeout("timeout")
+        )
+        with pytest.raises(SupertoneConnectionError):
+            await cv_client.create_cloned_voice(
+                name="MyVoice",
+                audio_bytes=b"x",
+                file_name="x.wav",
+                content_type="audio/wav",
             )

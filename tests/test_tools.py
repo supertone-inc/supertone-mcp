@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcp.types import AudioContent, TextContent
+
 from supertone_tts_mcp.exceptions import (
     SupertoneAuthError,
     SupertoneConnectionError,
@@ -2843,3 +2844,503 @@ class TestPredictDurationHandler:
         # and MUST mention duration somewhere, without raising.
         assert isinstance(result, str)
         assert "duration" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# ISSUE-019: clone_voice handler + validators
+# ---------------------------------------------------------------------------
+
+
+class TestValidateAudioPath:
+    """Tests for `validate_audio_path` (ISSUE-019)."""
+
+    def test_existing_wav_file_passes(self, tmp_path):
+        from supertone_tts_mcp.tools import validate_audio_path
+
+        f = tmp_path / "sample.wav"
+        f.write_bytes(b"RIFF....WAVEfmt ")
+        # Should NOT raise.
+        validate_audio_path(str(f))
+
+    def test_existing_mp3_file_passes(self, tmp_path):
+        from supertone_tts_mcp.tools import validate_audio_path
+
+        f = tmp_path / "sample.mp3"
+        f.write_bytes(b"\xff\xfb\x90\x00")
+        validate_audio_path(str(f))
+
+    def test_missing_file_raises(self, tmp_path):
+        from supertone_tts_mcp.tools import validate_audio_path
+
+        missing = str(tmp_path / "nope.wav")
+        with pytest.raises(ValueError) as exc:
+            validate_audio_path(missing)
+        assert f"Audio file not found: {missing}" in str(exc.value)
+
+    def test_unsupported_extension_raises(self, tmp_path):
+        from supertone_tts_mcp.tools import validate_audio_path
+
+        f = tmp_path / "sample.ogg"
+        f.write_bytes(b"OggS")
+        with pytest.raises(ValueError) as exc:
+            validate_audio_path(str(f))
+        msg = str(exc.value)
+        assert "Unsupported audio format" in msg
+        assert "WAV" in msg and "MP3" in msg
+
+    def test_extension_check_is_case_insensitive(self, tmp_path):
+        from supertone_tts_mcp.tools import validate_audio_path
+
+        f = tmp_path / "SAMPLE.WAV"
+        f.write_bytes(b"RIFF....WAVEfmt ")
+        # Should NOT raise — `.WAV` is the same as `.wav` for the purposes of
+        # cloning extension validation.
+        validate_audio_path(str(f))
+
+    def test_expanduser_path(self, tmp_path, monkeypatch):
+        """`~` in the path is expanded to the user's home before any check."""
+        from supertone_tts_mcp.tools import validate_audio_path
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        f = tmp_path / "audio.wav"
+        f.write_bytes(b"RIFF....WAVEfmt ")
+        # Use the `~`-prefixed form — must resolve to tmp_path/audio.wav.
+        validate_audio_path("~/audio.wav")
+
+
+class TestValidateAudioFileSize:
+    """Tests for `validate_audio_file_size` (ISSUE-019)."""
+
+    def test_small_file_passes(self, tmp_path):
+        from supertone_tts_mcp.tools import validate_audio_file_size
+
+        f = tmp_path / "tiny.wav"
+        f.write_bytes(b"x" * 1024)  # 1 KB
+        validate_audio_file_size(f)
+
+    def test_exactly_3mb_passes(self, tmp_path):
+        from supertone_tts_mcp.tools import validate_audio_file_size
+
+        f = tmp_path / "exact.wav"
+        # Simulate via mocked stat to avoid writing 3MB to disk
+        with patch.object(Path, "stat") as mstat:
+            stat_mock = MagicMock()
+            stat_mock.st_size = 3 * 1024 * 1024  # exactly 3MB
+            mstat.return_value = stat_mock
+            validate_audio_file_size(f)
+
+    def test_oversize_file_raises(self, tmp_path):
+        from supertone_tts_mcp.tools import validate_audio_file_size
+
+        f = tmp_path / "big.wav"
+        with patch.object(Path, "stat") as mstat:
+            stat_mock = MagicMock()
+            stat_mock.st_size = 3 * 1024 * 1024 + 1  # 3MB + 1 byte
+            mstat.return_value = stat_mock
+            with pytest.raises(ValueError) as exc:
+                validate_audio_file_size(f)
+        msg = str(exc.value)
+        assert "Audio file too large" in msg
+        assert "Maximum: 3MB" in msg
+
+
+class TestCloneVoiceHandler:
+    """Tests for the `clone_voice(name, audio_path, description?)` handler."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_with_wav(self, tmp_path):
+        """AC #1: valid WAV ≤3MB → SDK returns voice_id → formatted response."""
+        from supertone_tts_mcp.tools import clone_voice
+
+        f = tmp_path / "sample.wav"
+        f.write_bytes(b"RIFF....WAVEfmt ")
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.create_cloned_voice = AsyncMock(return_value={"voice_id": "cv_xyz999"})
+            inst.aclose = AsyncMock()
+
+            result = await clone_voice(name="MyVoice", audio_path=str(f))
+
+        assert result == (
+            "Custom voice created. voice_id: cv_xyz999. "
+            "Use this voice_id in text_to_speech."
+        )
+
+    @pytest.mark.asyncio
+    async def test_happy_path_with_mp3(self, tmp_path):
+        """Happy path with MP3 — content_type maps to audio/mpeg."""
+        from supertone_tts_mcp.tools import clone_voice
+
+        f = tmp_path / "sample.mp3"
+        f.write_bytes(b"\xff\xfb\x90\x00")
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.create_cloned_voice = AsyncMock(return_value={"voice_id": "cv_mp3_42"})
+            inst.aclose = AsyncMock()
+
+            result = await clone_voice(name="MP3Voice", audio_path=str(f))
+
+        # Output format check
+        assert "cv_mp3_42" in result
+        # SDK got the right content_type + file_name + bytes.
+        call_kwargs = inst.create_cloned_voice.call_args.kwargs
+        assert call_kwargs["content_type"] == "audio/mpeg"
+        assert call_kwargs["file_name"] == "sample.mp3"
+        assert call_kwargs["audio_bytes"] == b"\xff\xfb\x90\x00"
+        assert call_kwargs["name"] == "MP3Voice"
+
+    @pytest.mark.asyncio
+    async def test_wav_content_type_mapping(self, tmp_path):
+        """WAV extension maps to `audio/wav` content_type."""
+        from supertone_tts_mcp.tools import clone_voice
+
+        f = tmp_path / "sample.wav"
+        f.write_bytes(b"RIFF....WAVEfmt ")
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.create_cloned_voice = AsyncMock(return_value={"voice_id": "cv_wav_1"})
+            inst.aclose = AsyncMock()
+
+            await clone_voice(name="WavVoice", audio_path=str(f))
+
+        call_kwargs = inst.create_cloned_voice.call_args.kwargs
+        assert call_kwargs["content_type"] == "audio/wav"
+        assert call_kwargs["file_name"] == "sample.wav"
+
+    @pytest.mark.asyncio
+    async def test_description_passed_through(self, tmp_path):
+        """Optional description is forwarded to the SDK."""
+        from supertone_tts_mcp.tools import clone_voice
+
+        f = tmp_path / "sample.wav"
+        f.write_bytes(b"RIFF....WAVEfmt ")
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.create_cloned_voice = AsyncMock(
+                return_value={"voice_id": "cv_with_desc"}
+            )
+            inst.aclose = AsyncMock()
+
+            await clone_voice(
+                name="Desc",
+                audio_path=str(f),
+                description="warm narration voice",
+            )
+
+        call_kwargs = inst.create_cloned_voice.call_args.kwargs
+        assert call_kwargs["description"] == "warm narration voice"
+
+    @pytest.mark.asyncio
+    async def test_missing_file_returns_error_without_api_call(self, tmp_path):
+        """AC #2: missing file returns error without invoking the SDK."""
+        from supertone_tts_mcp.tools import clone_voice
+
+        missing = str(tmp_path / "ghost.wav")
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.create_cloned_voice = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await clone_voice(name="V", audio_path=missing)
+
+        assert f"Audio file not found: {missing}" in result
+        MC.assert_not_called()
+        inst.create_cloned_voice.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unsupported_extension_returns_error_without_api_call(self, tmp_path):
+        """AC #3: unsupported extension rejected before any API call."""
+        from supertone_tts_mcp.tools import clone_voice
+
+        f = tmp_path / "sample.ogg"
+        f.write_bytes(b"OggS")
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.create_cloned_voice = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await clone_voice(name="V", audio_path=str(f))
+
+        assert "Unsupported audio format" in result
+        assert "WAV" in result and "MP3" in result
+        MC.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_oversize_file_returns_error_without_api_call(self, tmp_path):
+        """AC #4: file >3MB rejected before any API call (mocked size).
+
+        We patch `validate_audio_file_size` rather than `Path.stat` globally
+        because `Path.is_file()` itself calls `stat()` internally — a global
+        mock would break the prior existence check.
+        """
+        from supertone_tts_mcp.tools import clone_voice
+
+        f = tmp_path / "big.wav"
+        f.write_bytes(b"RIFF")  # actual file is tiny
+
+        env = {"SUPERTONE_API_KEY": "key"}
+
+        def _raise_oversize(_path):
+            # 3.0009765625 MB
+            raise ValueError("Audio file too large: 3.00MB. Maximum: 3MB.")
+
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+            patch(
+                "supertone_tts_mcp.tools.validate_audio_file_size",
+                side_effect=_raise_oversize,
+            ),
+        ):
+            inst = MC.return_value
+            inst.create_cloned_voice = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await clone_voice(name="V", audio_path=str(f))
+
+        assert "Audio file too large" in result
+        assert "Maximum: 3MB" in result
+        MC.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_empty_name_returns_error_without_api_call(self, tmp_path):
+        """AC #5: empty name rejected before any API call."""
+        from supertone_tts_mcp.tools import clone_voice
+
+        f = tmp_path / "sample.wav"
+        f.write_bytes(b"RIFF....WAVEfmt ")
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.create_cloned_voice = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await clone_voice(name="", audio_path=str(f))
+
+        assert result == "Voice name must not be empty."
+        MC.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_whitespace_only_name_returns_error_without_api_call(self, tmp_path):
+        """AC #5 (extended): whitespace-only name rejected before any API call."""
+        from supertone_tts_mcp.tools import clone_voice
+
+        f = tmp_path / "sample.wav"
+        f.write_bytes(b"RIFF....WAVEfmt ")
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.create_cloned_voice = AsyncMock()
+            inst.aclose = AsyncMock()
+
+            result = await clone_voice(name="   ", audio_path=str(f))
+
+        assert result == "Voice name must not be empty."
+        MC.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_expands_tilde_in_path(self, tmp_path, monkeypatch):
+        """AC: `~` in audio_path expands to user's home dir before any check."""
+        from supertone_tts_mcp.tools import clone_voice
+
+        # Pretend tmp_path IS the user's home.
+        monkeypatch.setenv("HOME", str(tmp_path))
+        f = tmp_path / "audio.wav"
+        f.write_bytes(b"RIFF....WAVEfmt ")
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env, clear=False),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.create_cloned_voice = AsyncMock(return_value={"voice_id": "cv_tilde"})
+            inst.aclose = AsyncMock()
+
+            result = await clone_voice(name="V", audio_path="~/audio.wav")
+
+        assert "cv_tilde" in result
+        # The SDK got the actual bytes (proving file was read after expansion).
+        call_kwargs = inst.create_cloned_voice.call_args.kwargs
+        assert call_kwargs["audio_bytes"] == b"RIFF....WAVEfmt "
+        assert call_kwargs["file_name"] == "audio.wav"
+
+    @pytest.mark.asyncio
+    async def test_missing_api_key_returns_error_without_api_call(self, tmp_path):
+        """API key validation runs before any client construction."""
+        from supertone_tts_mcp.tools import clone_voice
+
+        f = tmp_path / "sample.wav"
+        f.write_bytes(b"RIFF....WAVEfmt ")
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("supertone_tts_mcp.tools.SupertoneClient") as MC:
+                result = await clone_voice(name="V", audio_path=str(f))
+                MC.assert_not_called()
+
+        assert "SUPERTONE_API_KEY" in result
+
+    @pytest.mark.asyncio
+    async def test_auth_error_returns_formatted_string(self, tmp_path):
+        """AC #6: SDK 401/403 -> formatted auth error."""
+        from supertone_tts_mcp.tools import clone_voice
+
+        f = tmp_path / "sample.wav"
+        f.write_bytes(b"RIFF....WAVEfmt ")
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.create_cloned_voice = AsyncMock(side_effect=SupertoneAuthError())
+            inst.aclose = AsyncMock()
+
+            result = await clone_voice(name="V", audio_path=str(f))
+
+        assert result == (
+            "Authentication failed. Please verify your SUPERTONE_API_KEY."
+        )
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_error_returns_formatted_string(self, tmp_path):
+        from supertone_tts_mcp.tools import clone_voice
+
+        f = tmp_path / "sample.wav"
+        f.write_bytes(b"RIFF....WAVEfmt ")
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.create_cloned_voice = AsyncMock(side_effect=SupertoneRateLimitError())
+            inst.aclose = AsyncMock()
+
+            result = await clone_voice(name="V", audio_path=str(f))
+
+        assert result == "Rate limit exceeded. Please wait and try again."
+
+    @pytest.mark.asyncio
+    async def test_server_error_returns_formatted_string(self, tmp_path):
+        from supertone_tts_mcp.tools import clone_voice
+
+        f = tmp_path / "sample.wav"
+        f.write_bytes(b"RIFF....WAVEfmt ")
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.create_cloned_voice = AsyncMock(side_effect=SupertoneServerError(503))
+            inst.aclose = AsyncMock()
+
+            result = await clone_voice(name="V", audio_path=str(f))
+
+        assert result == ("Supertone API server error (503). Please try again later.")
+
+    @pytest.mark.asyncio
+    async def test_connection_error_returns_formatted_string(self, tmp_path):
+        """Per RL-002: the handler covers the connection-error branch."""
+        from supertone_tts_mcp.tools import clone_voice
+
+        f = tmp_path / "sample.wav"
+        f.write_bytes(b"RIFF....WAVEfmt ")
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.create_cloned_voice = AsyncMock(side_effect=SupertoneConnectionError())
+            inst.aclose = AsyncMock()
+
+            result = await clone_voice(name="V", audio_path=str(f))
+
+        assert result == (
+            "Failed to connect to Supertone API. Please check your network connection."
+        )
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_success(self, tmp_path):
+        """The client is always closed after a successful call."""
+        from supertone_tts_mcp.tools import clone_voice
+
+        f = tmp_path / "sample.wav"
+        f.write_bytes(b"RIFF....WAVEfmt ")
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.create_cloned_voice = AsyncMock(return_value={"voice_id": "cv_close"})
+            inst.aclose = AsyncMock()
+
+            await clone_voice(name="V", audio_path=str(f))
+
+        inst.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_client_aclose_called_on_error(self, tmp_path):
+        """The client is always closed even when the SDK call fails."""
+        from supertone_tts_mcp.tools import clone_voice
+
+        f = tmp_path / "sample.wav"
+        f.write_bytes(b"RIFF....WAVEfmt ")
+
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_tts_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.create_cloned_voice = AsyncMock(side_effect=SupertoneConnectionError())
+            inst.aclose = AsyncMock()
+
+            await clone_voice(name="V", audio_path=str(f))
+
+        inst.aclose.assert_awaited_once()

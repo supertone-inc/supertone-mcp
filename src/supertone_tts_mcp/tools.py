@@ -20,6 +20,7 @@ from supertone_tts_mcp.constants import (
     DEFAULT_PITCH_SHIFT,
     DEFAULT_SPEED,
     DEFAULT_VOICE_ID,
+    MAX_AUDIO_FILE_BYTES,
     OUTPUT_MODE_BOTH,
     OUTPUT_MODE_FILES,
     OUTPUT_MODE_RESOURCES,
@@ -27,6 +28,7 @@ from supertone_tts_mcp.constants import (
     PITCH_SHIFT_MIN,
     SPEED_MAX,
     SPEED_MIN,
+    SUPPORTED_CLONE_FORMATS,
     SUPPORTED_FORMATS,
     SUPPORTED_LANGUAGES,
     SUPPORTED_MODELS,
@@ -123,6 +125,42 @@ def validate_model(model: str) -> None:
             f'Invalid model: "{model}". '
             f"Supported models: {', '.join(SUPPORTED_MODELS)}."
         )
+
+
+def validate_audio_path(audio_path: str) -> None:
+    """Validate the audio path for `clone_voice` (ISSUE-019).
+
+    Performs fail-fast checks in this order:
+      1. File must exist (after `~` expansion).
+      2. Extension (case-insensitive) must be in `SUPPORTED_CLONE_FORMATS`.
+
+    Per UX spec §4.8, the user-facing error wording is:
+      - missing → `Audio file not found: {path}`
+      - bad ext → `Unsupported audio format. Supported: WAV, MP3.`
+
+    Note: size validation is performed by `validate_audio_file_size` against
+    the resolved `Path` object so callers can fail-fast on `stat().st_size`
+    before calling `read_bytes()`.
+    """
+    p = Path(audio_path).expanduser()
+    if not p.is_file():
+        raise ValueError(f"Audio file not found: {p}")
+    ext = p.suffix.lower()
+    if ext not in SUPPORTED_CLONE_FORMATS:
+        raise ValueError("Unsupported audio format. Supported: WAV, MP3.")
+
+
+def validate_audio_file_size(path: Path) -> None:
+    """Validate the audio file size against `MAX_AUDIO_FILE_BYTES` (3MB).
+
+    Uses `stat().st_size` so callers can fail fast WITHOUT reading the file
+    contents. Raises with the UX-spec wording `Audio file too large:
+    {size_mb:.2f}MB. Maximum: 3MB.` per the ISSUE-019 AC.
+    """
+    size = path.stat().st_size
+    if size > MAX_AUDIO_FILE_BYTES:
+        size_mb = size / (1024 * 1024)
+        raise ValueError(f"Audio file too large: {size_mb:.2f}MB. Maximum: 3MB.")
 
 
 # --- Configuration Resolution ---
@@ -911,3 +949,88 @@ async def predict_duration(
         await client.aclose()
 
     return format_predicted_duration(duration)
+
+
+# --- clone_voice (ISSUE-019) ---
+
+
+async def clone_voice(
+    name: str,
+    audio_path: str,
+    description: str | None = None,
+) -> str:
+    """Create a custom (cloned) voice from a single local audio file.
+
+    Workflow (fail-fast, per UX spec §4.8):
+      1. Validate `name` is non-empty (after strip).
+      2. Resolve the API key from env.
+      3. Validate `audio_path` (existence, supported extension).
+      4. Validate file size (≤3MB) via `stat().st_size`.
+      5. Read bytes from disk.
+      6. Resolve content_type from extension.
+      7. Call `SupertoneClient.create_cloned_voice`.
+      8. Format the response per UX spec §4.8.
+
+    Errors from the SDK are mapped to the same plain-text strings used
+    elsewhere in this module (auth / rate-limit / 5xx / connection).
+    """
+    # Fail-fast: empty / whitespace-only name is rejected before any API call.
+    if not isinstance(name, str) or not name.strip():
+        return "Voice name must not be empty."
+
+    try:
+        api_key = resolve_api_key()
+    except ValueError as e:
+        return str(e)
+
+    # Path + size validation BEFORE constructing the client / reading bytes.
+    try:
+        validate_audio_path(audio_path)
+    except ValueError as e:
+        return str(e)
+
+    resolved = Path(audio_path).expanduser()
+
+    try:
+        validate_audio_file_size(resolved)
+    except ValueError as e:
+        return str(e)
+
+    # Read bytes only after size has been confirmed.
+    try:
+        audio_bytes = resolved.read_bytes()
+    except PermissionError:
+        return f"Cannot read audio file: {resolved}. Please check file permissions."
+    except OSError as e:
+        return f"Cannot read audio file: {resolved}. {e}"
+
+    content_type = SUPPORTED_CLONE_FORMATS[resolved.suffix.lower()]
+    file_name = resolved.name
+
+    client = SupertoneClient(api_key=api_key)
+    try:
+        result = await client.create_cloned_voice(
+            name=name,
+            audio_bytes=audio_bytes,
+            file_name=file_name,
+            content_type=content_type,
+            description=description,
+        )
+    except SupertoneAuthError:
+        return "Authentication failed. Please verify your SUPERTONE_API_KEY."
+    except SupertoneRateLimitError:
+        return "Rate limit exceeded. Please wait and try again."
+    except SupertoneServerError as e:
+        return f"Supertone API server error ({e.status_code}). Please try again later."
+    except SupertoneConnectionError:
+        return (
+            "Failed to connect to Supertone API. Please check your network connection."
+        )
+    finally:
+        await client.aclose()
+
+    voice_id = result["voice_id"]
+    return (
+        f"Custom voice created. voice_id: {voice_id}. "
+        "Use this voice_id in text_to_speech."
+    )

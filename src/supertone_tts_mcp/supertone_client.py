@@ -424,6 +424,49 @@ class SupertoneClient:
 
         return response.duration
 
+    async def create_cloned_voice(
+        self,
+        name: str,
+        audio_bytes: bytes,
+        file_name: str,
+        content_type: str,
+        description: str | None = None,
+    ) -> dict:
+        """Create a custom (cloned) voice from a single audio file.
+
+        Wraps `custom_voices.create_cloned_voice_async` (ISSUE-019). The
+        caller is responsible for validating the file (extension, size,
+        existence) and supplying already-read bytes plus the matching
+        MIME type. The wrapper does NOT touch the filesystem.
+
+        Returns a dict with the new `voice_id` (per the SDK
+        `CreateCustomVoiceResponse` shape).
+        """
+        files_payload: models.FilesTypedDict = {
+            "file_name": file_name,
+            "content": audio_bytes,
+            "content_type": content_type,
+        }
+
+        try:
+            response = await self._sdk.custom_voices.create_cloned_voice_async(
+                files=files_payload,
+                name=name,
+                description=description,
+            )
+        except (
+            UnauthorizedErrorResponse,
+            ForbiddenErrorResponse,
+            TooManyRequestsErrorResponse,
+            InternalServerErrorResponse,
+            NoResponseError,
+            httpx.ConnectError,
+            httpx.TimeoutException,
+        ) as exc:
+            _handle_sdk_errors(exc)
+
+        return {"voice_id": response.voice_id}
+
     async def aclose(self) -> None:
         """Close the underlying SDK HTTP client."""
         # The SDK uses httpx internally; close its async client if available
