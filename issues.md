@@ -530,45 +530,46 @@ Revert README.md changes.
 
 ---
 
-### ISSUE-011: Create server.json and register on MCP Registry and PulseMCP
+### ISSUE-011: Create server.json and register on MCP Registry
 - Track: product
 - PRD-Ref: FR-011
 - Priority: P2
 - Estimate: 0.5d
-- Status: backlog
-- Manual: true
+- Status: in progress
+- Manual: false
 - Owner:
-- Branch:
+- Branch: feat/mcp-registry-publish
 - GH-Issue:
 - PR:
 - Depends-On: ISSUE-008
 
 #### Goal
-The server is registered and searchable on the official MCP Registry and listed on PulseMCP.
+The server is registered and searchable on the official MCP Registry. Aggregators (PulseMCP, GitHub MCP Registry) now ingest from the official registry, so a single publish propagates to community directories.
 
 #### Scope (In/Out)
-- In: `server.json` file with correct schema, name (`io.github.pillip/supertone-tts`), description, version, and PyPI package reference. Registration on MCP Registry via `mcp-publisher publish`. Self-registration on PulseMCP.
-- Out: Ongoing maintenance of registry listings
+- In: `server.json` (schema `2025-12-11`) with name `io.github.supertone-inc/supertone-mcp`, description, version, and PyPI package reference (`registryType: pypi`, identifier `supertone-mcp`). `mcp-name` ownership marker in README. Automated `mcp-publisher publish` via GitHub Actions (OIDC) on release tags.
+- Out: Ongoing maintenance of registry listings; manual PulseMCP self-registration (now covered by aggregation)
 
 #### Acceptance Criteria (DoD)
-- [ ] Given `server.json`, when validated against the MCP server schema, then it passes validation
-- [ ] Given `server.json`, when inspected, then the name is `io.github.pillip/supertone-tts` and the package identifier is `supertone-tts-mcp` with registry_type `pypi`
-- [ ] Given `mcp-publisher publish` is run, when the MCP Registry is searched for "supertone", then the server appears in results
-- [ ] Given PulseMCP self-registration is completed, when the PulseMCP directory is searched, then the server is listed
+- [ ] Given `server.json`, when validated against the `2025-12-11` server schema, then it passes validation
+- [ ] Given `server.json`, when inspected, then the name is `io.github.supertone-inc/supertone-mcp` and the package identifier is `supertone-mcp` with `registryType: pypi`
+- [ ] Given the README, when inspected, then it contains the `mcp-name: io.github.supertone-inc/supertone-mcp` marker (carried into the PyPI description for ownership verification)
+- [ ] Given a `v*` tag is pushed, when the `publish-registry` CI job runs, then it authenticates via GitHub OIDC and publishes to the MCP Registry after PyPI indexing
+- [ ] Given `mcp-publisher publish` succeeds, when the MCP Registry is searched for "supertone", then the server appears in results
 
 #### Implementation Notes
-- File: `server.json` in project root
-- Follow PRD Section 8.5 for server.json format
-- Use `mcp-publisher` CLI for MCP Registry
-- PulseMCP registration is manual via their web form at pulsemcp.com
-- This issue is blocked until PyPI publishing (ISSUE-008) is complete
+- File: `server.json` in project root (schema `2025-12-11`, camelCase fields: `registryType`, `environmentVariables`, `transport`)
+- Namespace verified via GitHub OIDC (repo under `supertone-inc` org → `io.github.supertone-inc/*`); no secret required
+- PyPI ownership verified by `mcp-name` marker in README → published package description
+- Automated in `.github/workflows/ci.yml` `publish-registry` job (`needs: publish`, `id-token: write`)
+- This issue was blocked until PyPI publishing (ISSUE-008) — now complete
 
 #### Tests
-- [ ] server.json is valid JSON matching the schema (manual or automated validation)
+- [ ] server.json is valid JSON matching the schema (validated via check-jsonschema)
 - [ ] Server is searchable on MCP Registry (manual verification post-publish)
 
 #### Rollback
-Remove server.json, contact MCP Registry to delist if needed.
+Remove server.json + `publish-registry` job, contact MCP Registry to delist if needed.
 
 ---
 

@@ -1,5 +1,7 @@
 # supertone-mcp
 
+<!-- mcp-name: io.github.supertone-inc/supertone-mcp -->
+
 MCP server for [Supertone](https://supertone.ai) TTS API. Generate high-quality speech, browse the voice catalog, predict synthesis cost, and create cloned voices — directly from Claude Desktop, Cursor, or any MCP-compatible client.
 
 ## Features

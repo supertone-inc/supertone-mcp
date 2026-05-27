@@ -42,3 +42,40 @@ jobs:
 
       - name: Publish to PyPI
         run: uv publish --trusted-publishing always
+
+  publish-registry:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC auth to the MCP Registry (io.github.supertone-inc/*)
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait for the release to be available on PyPI
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          for i in $(seq 1 30); do
+            if curl -fsSL "https://pypi.org/pypi/supertone-mcp/${VERSION}/json" >/dev/null 2>&1; then
+              echo "PyPI has supertone-mcp ${VERSION}"; exit 0
+            fi
+            echo "waiting for PyPI to index ${VERSION} (attempt ${i})"; sleep 10
+          done
+          echo "::error::Timed out waiting for supertone-mcp ${VERSION} on PyPI"; exit 1
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Sync server.json version to the release tag
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          jq --arg v "$VERSION" '.version = $v | .packages[0].version = $v' server.json > server.tmp
+          mv server.tmp server.json
+
+      - name: Authenticate to MCP Registry (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish
