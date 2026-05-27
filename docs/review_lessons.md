@@ -104,11 +104,16 @@
   block is considered bound on the next line.
 - **Prevention point:** Implementation phase — when writing a function whose
   only successful exit is via `raise`, annotate it `NoReturn` from the start.
-- **Frequency:** 1
+- **Frequency:** 2
 - **Observed-In:** Carried forward from earlier issues; surfaced again by
   ISSUE-014's new methods (`search_voices`, `get_voice`,
-  `get_credit_balance`). Tracked for resolution under a tech-debt follow-up
-  issue.
+  `get_credit_balance`). **Re-observed in PR #20 (ISSUE-018)** where
+  `predict_duration` adds one more occurrence at
+  `supertone_client.py:425` (total 23 errors in `supertone_client.py`).
+  Now affects 8 wrapped methods; the single-line `NoReturn` fix on
+  `_handle_sdk_errors` would close all of them. Justified as a dedicated
+  tech-debt issue per the lessons-escalation protocol (frequency ≥ 2 across
+  multiple PRs).
 
 ---
 

@@ -11,9 +11,9 @@
 | Metric | Count |
 |--------|-------|
 | Total v0.2 docs/impl issues | 8 (ISSUE-013–020) |
-| Done | 5 (ISSUE-013, ISSUE-014, ISSUE-015, ISSUE-016, ISSUE-017) |
+| Done | 6 (ISSUE-013, ISSUE-014, ISSUE-015, ISSUE-016, ISSUE-017, ISSUE-018) |
 | In progress | 0 |
-| Remaining | 3 (ISSUE-018–020) |
+| Remaining | 2 (ISSUE-019–020) |
 
 > v0.1 (ISSUE-001–010, 012) shipped. ISSUE-011 (MCP Registry + PulseMCP) is parked pending manual PyPI publish + registry form submission.
 
@@ -40,6 +40,7 @@
 | #14 | feat(tools): replace list_voices with search_voice (breaking) | ISSUE-015 |
 | #16 | feat(tools): add get_voice and get_credit_balance handlers | ISSUE-016 |
 | #18 | feat(tools): add preview_voice tool (returns sample URLs) | ISSUE-017 |
+| #20 | feat(tools): add predict_duration tool (client + handler) | ISSUE-018 |
 
 ## Next Steps (v0.2)
 
@@ -66,4 +67,4 @@
 | `docs/architecture.md` | v0.2 (SDK-backed client; expanded tool surface in `tools.py`) |
 | `docs/data_model.md` | v0.1 — to be revisited if cloning needs new types |
 | `docs/test_plan.md` | v0.1 — to extend as ISSUE-014–020 land |
-| `issues.md` | ISSUE-016 shipped (PR #16 → 4875195); ISSUE-017–020 queued |
+| `issues.md` | ISSUE-018 shipped (PR #20 → 86d7f49); ISSUE-019–020 queued |
