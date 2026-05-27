@@ -226,6 +226,69 @@ class TestToolRegistration:
         for kw in ("language", "style", "model"):
             assert kw in properties, f"{kw} missing from preview_voice schema"
 
+    # --- ISSUE-018: predict_duration schema + description ---
+
+    def test_predict_duration_tool_exists(self):
+        """ISSUE-018 AC #6: predict_duration is registered."""
+        tools = mcp._tool_manager._tools
+        assert "predict_duration" in tools
+
+    def test_predict_duration_description_matches_ux_spec(self):
+        """Description must reflect docs/ux_spec.md §2.7."""
+        tool = mcp._tool_manager._tools["predict_duration"]
+        desc = tool.description
+        # Core wording from the UX spec — does not synthesize audio
+        assert "duration" in desc.lower()
+        assert "300" in desc
+        # Mentions text_to_speech parameter parity
+        assert "text_to_speech" in desc
+        # Mentions the credit/cost rationale
+        assert "credit" in desc.lower() or "cost" in desc.lower()
+
+    def test_predict_duration_has_text_parameter(self):
+        tool = mcp._tool_manager._tools["predict_duration"]
+        schema = tool.parameters
+        assert "text" in schema["properties"]
+
+    def test_predict_duration_text_is_required(self):
+        """text is the only REQUIRED parameter (mirrors text_to_speech)."""
+        tool = mcp._tool_manager._tools["predict_duration"]
+        schema = tool.parameters
+        assert "text" in schema.get("required", [])
+
+    def test_predict_duration_optional_params_match_text_to_speech(self):
+        """AC #6: same optional parameter schema as text_to_speech.
+
+        text_to_speech exposes (voice_id, language, output_format, model,
+        speed, pitch_shift, style) as optional. predict_duration must expose
+        the exact same set.
+        """
+        tts_tool = mcp._tool_manager._tools["text_to_speech"]
+        pd_tool = mcp._tool_manager._tools["predict_duration"]
+        tts_props = set(tts_tool.parameters["properties"].keys())
+        pd_props = set(pd_tool.parameters["properties"].keys())
+        # Every text_to_speech param must exist on predict_duration.
+        assert tts_props == pd_props, (
+            f"predict_duration schema mismatch with text_to_speech: "
+            f"missing={tts_props - pd_props}, extra={pd_props - tts_props}"
+        )
+
+    def test_predict_duration_optional_params_are_optional(self):
+        """All non-text params are optional."""
+        tool = mcp._tool_manager._tools["predict_duration"]
+        schema = tool.parameters
+        required = schema.get("required", [])
+        for kw in (
+            "voice_id",
+            "language",
+            "output_format",
+            "model",
+            "speed",
+            "pitch_shift",
+            "style",
+        ):
+            assert kw not in required, f"{kw} should be optional"
+
 
 class TestMainFunction:
     def test_main_is_callable(self):

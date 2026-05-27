@@ -65,6 +65,24 @@ def validate_text(text: str) -> None:
         raise ValueError("Text must not be empty.")
 
 
+def validate_text_max_length(text: str) -> None:
+    """Validate text against the 300-character SDK limit.
+
+    Used by handlers (e.g., `predict_duration`) where the SDK does NOT
+    auto-chunk long inputs and a >300-char payload would be rejected by
+    the API. The `text_to_speech` handler intentionally skips this check
+    because the synthesize SDK splits chunks transparently.
+    """
+    from supertone_tts_mcp.constants import TEXT_MAX_LENGTH
+
+    n = len(text)
+    if n > TEXT_MAX_LENGTH:
+        raise ValueError(
+            f"Text exceeds the maximum length of {TEXT_MAX_LENGTH} characters "
+            f"(received: {n}). Please shorten or split the text manually."
+        )
+
+
 def validate_language(language: str) -> None:
     """Validate language code."""
     if language not in SUPPORTED_LANGUAGES:
@@ -803,3 +821,94 @@ async def preview_voice(
         "model": model,
     }
     return format_voice_samples(samples, filters)
+
+
+# --- predict_duration (ISSUE-018) ---
+
+
+def format_predicted_duration(duration: float | None) -> str:
+    """Format the predicted duration as a single-line UX response.
+
+    Per UX spec §4.7 the canonical line is:
+      `Predicted duration: 2.34s (credit usage is proportional to duration).`
+
+    The SDK marks `duration` as Optional[float], so when the upstream API
+    omits the field we render a defensive "unknown" line that still keeps
+    the UX-spec phrasing about credit proportionality. This avoids
+    surfacing a Python `None` (or raising) when the schema gap is hit.
+    """
+    if duration is None:
+        return "Predicted duration: unknown (credit usage is proportional to duration)."
+    return (
+        f"Predicted duration: {duration:.2f}s "
+        "(credit usage is proportional to duration)."
+    )
+
+
+async def predict_duration(
+    text: str,
+    voice_id: str | None = None,
+    language: str | None = None,
+    output_format: str | None = None,
+    model: str | None = None,
+    speed: float | None = None,
+    pitch_shift: int | None = None,
+    style: str | None = None,
+) -> str:
+    """Predict the output audio length for a TTS request WITHOUT synthesizing.
+
+    Mirrors the parameter surface of `text_to_speech`, runs the same
+    client-side validation (with the addition of the 300-character text
+    cap — predict_duration does not chunk), and maps SDK errors to the
+    same plain-text strings used elsewhere in this module.
+
+    Returns the formatted single-line response per UX spec §4.7.
+    """
+    # Apply defaults — same resolution as text_to_speech.
+    voice_id = voice_id or resolve_voice_id()
+    language = language or DEFAULT_LANGUAGE
+    # SDK default for predict_duration is "wav"; match that (UX §2.7 note).
+    output_format = output_format or "wav"
+    model = model or DEFAULT_MODEL
+    speed = speed if speed is not None else DEFAULT_SPEED
+    pitch_shift = pitch_shift if pitch_shift is not None else DEFAULT_PITCH_SHIFT
+
+    # Validate inputs — fail-fast, no API call on any validation failure.
+    try:
+        api_key = resolve_api_key()
+        validate_text(text)
+        validate_text_max_length(text)
+        validate_language(language)
+        validate_output_format(output_format)
+        validate_model(model)
+        validate_speed(speed)
+        validate_pitch_shift(pitch_shift)
+    except ValueError as e:
+        return str(e)
+
+    client = SupertoneClient(api_key=api_key)
+    try:
+        duration = await client.predict_duration(
+            voice_id=voice_id,
+            text=text,
+            language=language,
+            output_format=output_format,
+            model=model,
+            speed=speed,
+            pitch_shift=pitch_shift,
+            style=style,
+        )
+    except SupertoneAuthError:
+        return "Authentication failed. Please verify your SUPERTONE_API_KEY."
+    except SupertoneRateLimitError:
+        return "Rate limit exceeded. Please wait and try again."
+    except SupertoneServerError as e:
+        return f"Supertone API server error ({e.status_code}). Please try again later."
+    except SupertoneConnectionError:
+        return (
+            "Failed to connect to Supertone API. Please check your network connection."
+        )
+    finally:
+        await client.aclose()
+
+    return format_predicted_duration(duration)

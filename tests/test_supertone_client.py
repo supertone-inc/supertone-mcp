@@ -925,3 +925,218 @@ class TestVoiceDetailDictShape:
 
         c: CreditBalanceDict = {"balance": 100.0}
         assert c["balance"] == 100.0
+
+
+# ---------------------------------------------------------------------------
+# ISSUE-018: predict_duration SDK wrapper
+# ---------------------------------------------------------------------------
+
+
+def _make_predict_duration_response(duration: float | None = 2.34):
+    """Build a mock PredictDurationResponse."""
+    mock = MagicMock()
+    mock.duration = duration
+    return mock
+
+
+class TestPredictDuration:
+    @pytest.mark.asyncio
+    async def test_returns_duration_float(self, client):
+        """Happy path: wrapper extracts the `duration` field from the SDK response."""
+        resp = _make_predict_duration_response(duration=2.34)
+        client._sdk.text_to_speech.predict_duration_async = AsyncMock(return_value=resp)
+
+        result = await client.predict_duration(
+            voice_id="v1",
+            text="hello",
+            language="en",
+            output_format="wav",
+            model="sona_speech_1",
+            speed=1.0,
+            pitch_shift=0,
+        )
+
+        assert result == 2.34
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_duration_missing(self, client):
+        """SDK schema marks `duration` Optional; the wrapper passes `None` through."""
+        resp = _make_predict_duration_response(duration=None)
+        client._sdk.text_to_speech.predict_duration_async = AsyncMock(return_value=resp)
+
+        result = await client.predict_duration(
+            voice_id="v1",
+            text="hello",
+            language="en",
+            output_format="wav",
+            model="sona_speech_1",
+            speed=1.0,
+            pitch_shift=0,
+        )
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_passes_all_params_to_sdk(self, client):
+        """All parameters (incl. style) are forwarded to predict_duration_async."""
+        resp = _make_predict_duration_response(duration=1.0)
+        client._sdk.text_to_speech.predict_duration_async = AsyncMock(return_value=resp)
+
+        await client.predict_duration(
+            voice_id="alice-01",
+            text="hello there",
+            language="ko",
+            output_format="mp3",
+            model="sona_speech_2",
+            speed=1.25,
+            pitch_shift=-3,
+            style="happy",
+        )
+
+        call_kwargs = client._sdk.text_to_speech.predict_duration_async.call_args.kwargs
+        assert call_kwargs["voice_id"] == "alice-01"
+        assert call_kwargs["text"] == "hello there"
+        # language / model / output_format must be the SDK enum values
+        assert call_kwargs["language"].value == "ko"
+        assert call_kwargs["model"].value == "sona_speech_2"
+        assert call_kwargs["output_format"].value == "mp3"
+        # style is a plain pass-through string
+        assert call_kwargs["style"] == "happy"
+        # voice_settings carries speed + pitch_shift
+        vs = call_kwargs["voice_settings"]
+        assert vs.speed == 1.25
+        assert vs.pitch_shift == -3.0
+
+    @pytest.mark.asyncio
+    async def test_style_defaults_to_none(self, client):
+        """When the caller omits `style`, the SDK receives `style=None`."""
+        resp = _make_predict_duration_response(duration=1.0)
+        client._sdk.text_to_speech.predict_duration_async = AsyncMock(return_value=resp)
+
+        await client.predict_duration(
+            voice_id="v1",
+            text="hi",
+            language="en",
+            output_format="wav",
+            model="sona_speech_1",
+            speed=1.0,
+            pitch_shift=0,
+        )
+
+        call_kwargs = client._sdk.text_to_speech.predict_duration_async.call_args.kwargs
+        assert call_kwargs["style"] is None
+
+    @pytest.mark.asyncio
+    async def test_unauthorized_raises_auth_error(self, client):
+        client._sdk.text_to_speech.predict_duration_async = AsyncMock(
+            side_effect=_sdk_error(UnauthorizedErrorResponse)
+        )
+        with pytest.raises(SupertoneAuthError):
+            await client.predict_duration(
+                voice_id="v1",
+                text="hi",
+                language="en",
+                output_format="wav",
+                model="sona_speech_1",
+                speed=1.0,
+                pitch_shift=0,
+            )
+
+    @pytest.mark.asyncio
+    async def test_forbidden_raises_auth_error(self, client):
+        client._sdk.text_to_speech.predict_duration_async = AsyncMock(
+            side_effect=_sdk_error(ForbiddenErrorResponse)
+        )
+        with pytest.raises(SupertoneAuthError):
+            await client.predict_duration(
+                voice_id="v1",
+                text="hi",
+                language="en",
+                output_format="wav",
+                model="sona_speech_1",
+                speed=1.0,
+                pitch_shift=0,
+            )
+
+    @pytest.mark.asyncio
+    async def test_429_raises_rate_limit_error(self, client):
+        client._sdk.text_to_speech.predict_duration_async = AsyncMock(
+            side_effect=_sdk_error(TooManyRequestsErrorResponse)
+        )
+        with pytest.raises(SupertoneRateLimitError):
+            await client.predict_duration(
+                voice_id="v1",
+                text="hi",
+                language="en",
+                output_format="wav",
+                model="sona_speech_1",
+                speed=1.0,
+                pitch_shift=0,
+            )
+
+    @pytest.mark.asyncio
+    async def test_5xx_raises_server_error(self, client):
+        client._sdk.text_to_speech.predict_duration_async = AsyncMock(
+            side_effect=_sdk_error(InternalServerErrorResponse)
+        )
+        with pytest.raises(SupertoneServerError):
+            await client.predict_duration(
+                voice_id="v1",
+                text="hi",
+                language="en",
+                output_format="wav",
+                model="sona_speech_1",
+                speed=1.0,
+                pitch_shift=0,
+            )
+
+    @pytest.mark.asyncio
+    async def test_no_response_raises_connection_error(self, client):
+        """RL-002: symmetric coverage of NoResponseError."""
+        client._sdk.text_to_speech.predict_duration_async = AsyncMock(
+            side_effect=NoResponseError("no response")
+        )
+        with pytest.raises(SupertoneConnectionError):
+            await client.predict_duration(
+                voice_id="v1",
+                text="hi",
+                language="en",
+                output_format="wav",
+                model="sona_speech_1",
+                speed=1.0,
+                pitch_shift=0,
+            )
+
+    @pytest.mark.asyncio
+    async def test_connect_error_raises_connection_error(self, client):
+        """RL-002: symmetric coverage of httpx.ConnectError."""
+        client._sdk.text_to_speech.predict_duration_async = AsyncMock(
+            side_effect=httpx.ConnectError("refused")
+        )
+        with pytest.raises(SupertoneConnectionError):
+            await client.predict_duration(
+                voice_id="v1",
+                text="hi",
+                language="en",
+                output_format="wav",
+                model="sona_speech_1",
+                speed=1.0,
+                pitch_shift=0,
+            )
+
+    @pytest.mark.asyncio
+    async def test_timeout_raises_connection_error(self, client):
+        """RL-002: symmetric coverage of httpx.TimeoutException."""
+        client._sdk.text_to_speech.predict_duration_async = AsyncMock(
+            side_effect=httpx.ReadTimeout("timeout")
+        )
+        with pytest.raises(SupertoneConnectionError):
+            await client.predict_duration(
+                voice_id="v1",
+                text="hi",
+                language="en",
+                output_format="wav",
+                model="sona_speech_1",
+                speed=1.0,
+                pitch_shift=0,
+            )

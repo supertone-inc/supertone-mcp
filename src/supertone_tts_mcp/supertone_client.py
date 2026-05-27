@@ -42,6 +42,20 @@ _FORMAT_MAP = {
     for member in models.APIConvertTextToSpeechUsingCharacterRequestOutputFormat
 }
 
+# Maps for the predict-duration endpoint. The SDK declares parallel enum
+# types whose `.value` strings match the synthesize maps above, but we
+# resolve via the dedicated enum classes to stay future-proof if the SDK
+# ever diverges them.
+_PREDICT_LANGUAGE_MAP = {
+    member.value: member for member in models.PredictTTSDurationRequestLanguage
+}
+_PREDICT_MODEL_MAP = {
+    member.value: member for member in models.PredictTTSDurationRequestModel
+}
+_PREDICT_FORMAT_MAP = {
+    member.value: member for member in models.PredictTTSDurationRequestOutputFormat
+}
+
 
 def _handle_sdk_errors(exc: Exception) -> None:
     """Map SDK exceptions to domain exceptions. Always raises."""
@@ -359,6 +373,56 @@ class SupertoneClient:
             _handle_sdk_errors(exc)
 
         return {"balance": response.balance}
+
+    async def predict_duration(
+        self,
+        voice_id: str,
+        text: str,
+        language: str,
+        output_format: str,
+        model: str,
+        speed: float,
+        pitch_shift: int,
+        style: str | None = None,
+    ) -> float | None:
+        """Predict the audio duration (seconds) for a TTS request WITHOUT
+        synthesizing any audio.
+
+        Mirrors the parameter shape of `synthesize()` so callers can preview
+        the cost of a TTS call. Returns the SDK's `duration` field (a float
+        in seconds), or `None` when the SDK does not populate it.
+        """
+        lang_enum = _PREDICT_LANGUAGE_MAP[language]
+        model_enum = _PREDICT_MODEL_MAP[model]
+        fmt_enum = _PREDICT_FORMAT_MAP[output_format]
+
+        voice_settings = models.ConvertTextToSpeechParameters(
+            speed=speed,
+            pitch_shift=float(pitch_shift),
+        )
+
+        try:
+            response = await self._sdk.text_to_speech.predict_duration_async(
+                voice_id=voice_id,
+                text=text,
+                language=lang_enum,
+                model=model_enum,
+                output_format=fmt_enum,
+                voice_settings=voice_settings,
+                style=style,
+            )
+        except (
+            UnauthorizedErrorResponse,
+            ForbiddenErrorResponse,
+            TooManyRequestsErrorResponse,
+            InternalServerErrorResponse,
+            NoResponseError,
+            httpx.ConnectError,
+            httpx.TimeoutException,
+        ) as exc:
+            _handle_sdk_errors(exc)
+
+        return response.duration
 
     async def aclose(self) -> None:
         """Close the underlying SDK HTTP client."""
