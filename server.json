@@ -1,0 +1,54 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.supertone-inc/supertone-mcp",
+  "title": "Supertone TTS",
+  "description": "High-quality Supertone TTS: voice search, preview, duration prediction, and voice cloning",
+  "version": "0.1.1",
+  "repository": {
+    "url": "https://github.com/supertone-inc/supertone-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "supertone-mcp",
+      "version": "0.1.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SUPERTONE_API_KEY",
+          "description": "Supertone API key",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "SUPERTONE_MCP_VOICE_ID",
+          "description": "Default voice_id for synthesis (falls back to a preset voice)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "SUPERTONE_OUTPUT_DIR",
+          "description": "Directory where audio files are saved (default ~/supertone-tts-output/)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "SUPERTONE_MCP_OUTPUT_MODE",
+          "description": "How text_to_speech returns audio: files, resources, or both",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "SUPERTONE_MCP_AUTOPLAY",
+          "description": "Auto-play generated audio on macOS via afplay (true by default)",
+          "isRequired": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
