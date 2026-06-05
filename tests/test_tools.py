@@ -4540,3 +4540,340 @@ class TestGetCustomVoiceHandler:
             await get_custom_voice("cv1")
 
         inst.aclose.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# ISSUE-027: get_usage_history / get_voice_usage formatters + handlers
+# ---------------------------------------------------------------------------
+
+from supertone_mcp.tools import (  # noqa: E402
+    format_usage_history,
+    format_voice_usage,
+    get_usage_history,
+    get_voice_usage,
+)
+
+
+def _usage_history_payload(buckets, total):
+    return {"total": total, "buckets": buckets}
+
+
+def _voice_usage_payload(voice_id, records):
+    return {"voice_id": voice_id, "records": records}
+
+
+class TestFormatUsageHistory:
+    def test_renders_per_period_summary(self):
+        payload = _usage_history_payload(
+            total=1.0,
+            buckets=[
+                {
+                    "starting_at": "2026-05-01T00:00:00Z",
+                    "ending_at": "2026-05-02T00:00:00Z",
+                    "results": [
+                        {
+                            "minutes_used": 12.5,
+                            "voice_id": "v1",
+                            "voice_name": "Alice",
+                            "model": "sona_speech_2",
+                        },
+                    ],
+                }
+            ],
+        )
+        result = format_usage_history(payload)
+        assert "2026-05-01T00:00:00Z" in result
+        assert "2026-05-02T00:00:00Z" in result
+        assert "12.5" in result
+        assert "Alice" in result
+
+    def test_empty_usage_returns_no_usage_message_not_error(self):
+        payload = _usage_history_payload(total=0.0, buckets=[])
+        result = format_usage_history(payload)
+        # Clear "no usage" style message, not an error string.
+        assert "no usage" in result.lower()
+        assert "error" not in result.lower()
+
+    def test_bucket_with_no_results_is_handled(self):
+        payload = _usage_history_payload(
+            total=1.0,
+            buckets=[
+                {
+                    "starting_at": "2026-05-01T00:00:00Z",
+                    "ending_at": "2026-05-02T00:00:00Z",
+                    "results": [],
+                }
+            ],
+        )
+        result = format_usage_history(payload)
+        assert "2026-05-01T00:00:00Z" in result
+
+
+class TestFormatVoiceUsage:
+    def test_renders_voice_summary(self):
+        payload = _voice_usage_payload(
+            voice_id="v1",
+            records=[
+                {
+                    "date": "2026-05-01",
+                    "total_minutes_used": 4.0,
+                    "name": "Alice",
+                    "model": "sona_speech_2",
+                },
+                {"date": "2026-05-03", "total_minutes_used": 2.5, "name": "Alice"},
+            ],
+        )
+        result = format_voice_usage(payload)
+        assert "v1" in result
+        assert "2026-05-01" in result
+        assert "4.0" in result
+        assert "2026-05-03" in result
+
+    def test_empty_records_returns_no_usage_message_not_error(self):
+        payload = _voice_usage_payload(voice_id="v1", records=[])
+        result = format_voice_usage(payload)
+        assert "no usage" in result.lower()
+        assert "error" not in result.lower()
+        assert "v1" in result
+
+
+class TestGetUsageHistoryHandler:
+    @pytest.mark.asyncio
+    async def test_happy_path_returns_formatted_summary(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        payload = _usage_history_payload(
+            total=1.0,
+            buckets=[
+                {
+                    "starting_at": "2026-05-01T00:00:00Z",
+                    "ending_at": "2026-05-02T00:00:00Z",
+                    "results": [
+                        {"minutes_used": 12.5, "voice_id": "v1", "voice_name": "Alice"}
+                    ],
+                }
+            ],
+        )
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_usage_history = AsyncMock(return_value=payload)
+            inst.aclose = AsyncMock()
+
+            result = await get_usage_history()
+
+        assert "2026-05-01T00:00:00Z" in result
+        assert "12.5" in result
+        inst.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_empty_usage_returns_no_usage_message(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        payload = _usage_history_payload(total=0.0, buckets=[])
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_usage_history = AsyncMock(return_value=payload)
+            inst.aclose = AsyncMock()
+
+            result = await get_usage_history()
+
+        assert "no usage" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_missing_api_key_returns_message(self):
+        with patch.dict(os.environ, {}, clear=True):
+            result = await get_usage_history()
+        assert "SUPERTONE_API_KEY" in result
+
+    @pytest.mark.asyncio
+    async def test_auth_error_returns_formatted_string(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_usage_history = AsyncMock(side_effect=SupertoneAuthError())
+            inst.aclose = AsyncMock()
+
+            result = await get_usage_history()
+
+        assert result == "Authentication failed. Please verify your SUPERTONE_API_KEY."
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_error_returns_formatted_string(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_usage_history = AsyncMock(side_effect=SupertoneRateLimitError())
+            inst.aclose = AsyncMock()
+
+            result = await get_usage_history()
+
+        assert result == "Rate limit exceeded. Please wait and try again."
+
+    @pytest.mark.asyncio
+    async def test_server_error_returns_formatted_string(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_usage_history = AsyncMock(side_effect=SupertoneServerError(503))
+            inst.aclose = AsyncMock()
+
+            result = await get_usage_history()
+
+        assert "server error (503)" in result
+
+    @pytest.mark.asyncio
+    async def test_connection_error_returns_formatted_string(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_usage_history = AsyncMock(
+                side_effect=SupertoneConnectionError("down")
+            )
+            inst.aclose = AsyncMock()
+
+            result = await get_usage_history()
+
+        assert "Failed to connect to Supertone API." in result
+
+
+class TestGetVoiceUsageHandler:
+    @pytest.mark.asyncio
+    async def test_happy_path_returns_formatted_summary(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        payload = _voice_usage_payload(
+            voice_id="v1",
+            records=[
+                {"date": "2026-05-01", "total_minutes_used": 4.0, "name": "Alice"}
+            ],
+        )
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice_usage = AsyncMock(return_value=payload)
+            inst.aclose = AsyncMock()
+
+            result = await get_voice_usage(voice_id="v1")
+
+        assert "v1" in result
+        assert "2026-05-01" in result
+        inst.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_empty_voice_id_returns_validation_error_no_api_call(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            result = await get_voice_usage(voice_id="")
+
+        assert result == "voice_id must not be empty."
+        MC.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_whitespace_voice_id_returns_validation_error_no_api_call(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            result = await get_voice_usage(voice_id="   ")
+
+        assert result == "voice_id must not be empty."
+        MC.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_empty_records_returns_no_usage_message(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        payload = _voice_usage_payload(voice_id="v1", records=[])
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice_usage = AsyncMock(return_value=payload)
+            inst.aclose = AsyncMock()
+
+            result = await get_voice_usage(voice_id="v1")
+
+        assert "no usage" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_auth_error_returns_formatted_string(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice_usage = AsyncMock(side_effect=SupertoneAuthError())
+            inst.aclose = AsyncMock()
+
+            result = await get_voice_usage(voice_id="v1")
+
+        assert result == "Authentication failed. Please verify your SUPERTONE_API_KEY."
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_error_returns_formatted_string(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice_usage = AsyncMock(side_effect=SupertoneRateLimitError())
+            inst.aclose = AsyncMock()
+
+            result = await get_voice_usage(voice_id="v1")
+
+        assert result == "Rate limit exceeded. Please wait and try again."
+
+    @pytest.mark.asyncio
+    async def test_server_error_returns_formatted_string(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice_usage = AsyncMock(side_effect=SupertoneServerError(500))
+            inst.aclose = AsyncMock()
+
+            result = await get_voice_usage(voice_id="v1")
+
+        assert "server error (500)" in result
+
+    @pytest.mark.asyncio
+    async def test_connection_error_returns_formatted_string(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.get_voice_usage = AsyncMock(
+                side_effect=SupertoneConnectionError("down")
+            )
+            inst.aclose = AsyncMock()
+
+            result = await get_voice_usage(voice_id="v1")
+
+        assert "Failed to connect to Supertone API." in result

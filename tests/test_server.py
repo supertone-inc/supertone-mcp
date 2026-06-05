@@ -571,3 +571,41 @@ class TestMainModule:
             / "__main__.py"
         ).read_text()
         assert "from supertone_mcp.server import main" in source
+
+
+class TestUsageToolsRegistration:
+    """ISSUE-027: get_usage_history + get_voice_usage registration."""
+
+    def test_get_usage_history_tool_exists(self):
+        tools = mcp._tool_manager._tools
+        assert "get_usage_history" in tools
+
+    def test_get_voice_usage_tool_exists(self):
+        tools = mcp._tool_manager._tools
+        assert "get_voice_usage" in tools
+
+    def test_get_usage_history_has_no_required_params(self):
+        """All get_usage_history params are optional."""
+        tool = mcp._tool_manager._tools["get_usage_history"]
+        schema = tool.parameters
+        assert not schema.get("required")
+
+    def test_get_voice_usage_has_voice_id_parameter(self):
+        tool = mcp._tool_manager._tools["get_voice_usage"]
+        schema = tool.parameters
+        assert "voice_id" in schema["properties"]
+
+    def test_get_voice_usage_voice_id_is_required(self):
+        tool = mcp._tool_manager._tools["get_voice_usage"]
+        schema = tool.parameters
+        assert "voice_id" in schema.get("required", [])
+
+    def test_get_usage_history_description_mentions_usage(self):
+        tool = mcp._tool_manager._tools["get_usage_history"]
+        assert "usage" in tool.description.lower()
+
+    def test_get_voice_usage_description_mentions_voice(self):
+        tool = mcp._tool_manager._tools["get_voice_usage"]
+        desc = tool.description.lower()
+        assert "usage" in desc
+        assert "voice" in desc

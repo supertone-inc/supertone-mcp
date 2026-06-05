@@ -21,8 +21,13 @@ from supertone_mcp.models import (
     CreditBalanceDict,
     CustomVoiceDict,
     SampleDict,
+    UsageBucketDict,
+    UsageHistoryDict,
+    UsageResultDict,
     VoiceDetailDict,
     VoiceDict,
+    VoiceUsageDict,
+    VoiceUsageRecordDict,
 )
 
 # Map string language codes to SDK enum values
@@ -392,6 +397,137 @@ class SupertoneClient:
             _handle_sdk_errors(exc)
 
         return {"balance": response.balance}
+
+    async def get_usage_history(
+        self,
+        start_time: str,
+        end_time: str,
+        bucket_width: str | None = None,
+        breakdown_type: list[str] | None = None,
+        page_size: float | None = None,
+        next_page_token: str | None = None,
+    ) -> UsageHistoryDict:
+        """Fetch advanced TTS usage analytics (ISSUE-027).
+
+        Wraps `usage.get_usage_async`. The SDK REQUIRES `start_time`/`end_time`
+        (RFC3339); the remaining params (`bucket_width`, `breakdown_type`,
+        `page_size`, `next_page_token`) are all optional and only forwarded
+        when the caller supplies them, so the SDK's own defaults apply
+        otherwise. `bucket_width`/`breakdown_type` are pass-through strings —
+        the SDK / API validates the enum membership.
+
+        Maps the SDK `UsageAnalyticsResponse` (`data` → `buckets`, `total`)
+        into a `UsageHistoryDict`. Per-result optional breakdown fields
+        (`voice_id`, `voice_name`, `model`) are only included when the SDK
+        populated them; the SDK `api_key` field is intentionally dropped.
+        """
+        sdk_kwargs: dict = {"start_time": start_time, "end_time": end_time}
+        if bucket_width is not None:
+            sdk_kwargs["bucket_width"] = bucket_width
+        if breakdown_type is not None:
+            sdk_kwargs["breakdown_type"] = breakdown_type
+        if page_size is not None:
+            sdk_kwargs["page_size"] = page_size
+        if next_page_token is not None:
+            sdk_kwargs["next_page_token"] = next_page_token
+
+        try:
+            response = await self._sdk.usage.get_usage_async(**sdk_kwargs)
+        except (
+            UnauthorizedErrorResponse,
+            ForbiddenErrorResponse,
+            TooManyRequestsErrorResponse,
+            InternalServerErrorResponse,
+            NoResponseError,
+            httpx.ConnectError,
+            httpx.TimeoutException,
+        ) as exc:
+            _handle_sdk_errors(exc)
+
+        buckets: list[UsageBucketDict] = []
+        for bucket in response.data:
+            results: list[UsageResultDict] = []
+            for item in bucket.results:
+                result: UsageResultDict = {"minutes_used": item.minutes_used}
+                voice_id = getattr(item, "voice_id", None)
+                if voice_id is not None:
+                    result["voice_id"] = voice_id
+                voice_name = getattr(item, "voice_name", None)
+                if voice_name is not None:
+                    result["voice_name"] = voice_name
+                model = getattr(item, "model", None)
+                if model is not None:
+                    result["model"] = model
+                results.append(result)
+            buckets.append(
+                {
+                    "starting_at": bucket.starting_at,
+                    "ending_at": bucket.ending_at,
+                    "results": results,
+                }
+            )
+
+        return {"total": response.total, "buckets": buckets}
+
+    async def get_voice_usage(
+        self,
+        voice_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> VoiceUsageDict:
+        """Fetch usage records for a single voice over a date range (ISSUE-027).
+
+        Wraps `usage.get_voice_usage_async`. NOTE (truthful-to-source): the SDK
+        0.2.3 endpoint has NO `voice_id` query parameter — it returns a
+        date-range list of per-voice/day usage records (`GetUsageListV1Response`,
+        with required `start_date`/`end_date` in YYYY-MM-DD). To honor the tool's
+        per-voice contract we fetch the full date-range list and filter it
+        client-side on `voice_id`.
+
+        Maps each matching SDK `GetUsageResponseV1Data` into a
+        `VoiceUsageRecordDict` (`date_` → `date`); optional descriptive fields
+        (`name`, `style`, `language`, `model`) are only included when the SDK
+        populated them. `thumbnail_url` is intentionally not surfaced.
+        """
+        try:
+            response = await self._sdk.usage.get_voice_usage_async(
+                start_date=start_date,
+                end_date=end_date,
+            )
+        except (
+            UnauthorizedErrorResponse,
+            ForbiddenErrorResponse,
+            TooManyRequestsErrorResponse,
+            InternalServerErrorResponse,
+            NoResponseError,
+            httpx.ConnectError,
+            httpx.TimeoutException,
+        ) as exc:
+            _handle_sdk_errors(exc)
+
+        records: list[VoiceUsageRecordDict] = []
+        for item in response.usages:
+            if item.voice_id != voice_id:
+                continue
+            record: VoiceUsageRecordDict = {
+                "date": item.date_,
+                "total_minutes_used": item.total_minutes_used,
+            }
+            name = getattr(item, "name", None)
+            if name is not None:
+                record["name"] = name
+            style = getattr(item, "style", None)
+            if style is not None:
+                record["style"] = style
+            language = getattr(item, "language", None)
+            if language is not None:
+                record["language"] = language
+            model = getattr(item, "model", None)
+            if model is not None:
+                record["model"] = model
+            records.append(record)
+
+        return {"voice_id": voice_id, "records": records}
 
     async def predict_duration(
         self,

@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from mcp.types import AudioContent, TextContent
@@ -45,8 +46,10 @@ from supertone_mcp.models import (
     CustomVoiceDict,
     SampleDict,
     TTSResponse,
+    UsageHistoryDict,
     VoiceDetailDict,
     VoiceInfo,
+    VoiceUsageDict,
     generate_output_path,
 )
 from supertone_mcp.supertone_client import SupertoneClient
@@ -1347,3 +1350,179 @@ async def get_custom_voice(voice_id: str) -> str:
         await client.aclose()
 
     return format_custom_voice_detail(detail)
+
+
+# --- get_usage_history / get_voice_usage (ISSUE-027) ---
+
+# Default look-back window (days) when the caller does not pass an explicit
+# range. The SDK REQUIRES start/end for both usage endpoints, so we compute a
+# sensible recent window rather than forcing the user to supply dates.
+_USAGE_DEFAULT_WINDOW_DAYS = 30
+
+
+def _default_usage_range_datetimes() -> tuple[str, str]:
+    """Return (start_time, end_time) RFC3339 strings for the default window."""
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=_USAGE_DEFAULT_WINDOW_DAYS)
+    # RFC3339 / ISO-8601 with explicit Z (UTC) suffix.
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
+    return start.strftime(fmt), end.strftime(fmt)
+
+
+def _default_usage_range_dates() -> tuple[str, str]:
+    """Return (start_date, end_date) YYYY-MM-DD strings for the default window."""
+    end = datetime.now(timezone.utc).date()
+    start = end - timedelta(days=_USAGE_DEFAULT_WINDOW_DAYS)
+    return start.isoformat(), end.isoformat()
+
+
+def format_usage_history(history: UsageHistoryDict) -> str:
+    """Format a `UsageHistoryDict` as a multi-line plain-text usage summary.
+
+    Renders one section per time bucket (period), listing each usage result's
+    minutes and — when present — the voice and model breakdown. When there are
+    no buckets (empty usage), returns a clear "no usage" message rather than an
+    error string, per the ISSUE-027 AC.
+    """
+    buckets = history.get("buckets") or []
+    if not buckets:
+        return "No usage recorded for the selected period."
+
+    lines = [f"Usage history ({len(buckets)} period(s)):"]
+    for bucket in buckets:
+        start = bucket["starting_at"]
+        end = bucket["ending_at"]
+        lines.append("")
+        lines.append(f"Period: {start} -> {end}")
+        results = bucket.get("results") or []
+        if not results:
+            lines.append("  (no usage in this period)")
+            continue
+        for result in results:
+            minutes = result["minutes_used"]
+            detail_parts: list[str] = [f"{minutes} min"]
+            voice_name = result.get("voice_name")
+            voice_id = result.get("voice_id")
+            if voice_name:
+                label = voice_name
+                if voice_id:
+                    label += f" ({voice_id})"
+                detail_parts.append(label)
+            elif voice_id:
+                detail_parts.append(voice_id)
+            model = result.get("model")
+            if model:
+                detail_parts.append(f"model={model}")
+            lines.append("  - " + ", ".join(detail_parts))
+    return "\n".join(lines)
+
+
+def format_voice_usage(usage: VoiceUsageDict) -> str:
+    """Format a `VoiceUsageDict` as a multi-line plain-text usage summary.
+
+    Renders one line per per-day record for the requested voice. When there are
+    no records (the voice had no usage in the date range), returns a clear "no
+    usage" message that still names the voice, rather than an error string, per
+    the ISSUE-027 AC.
+    """
+    voice_id = usage["voice_id"]
+    records = usage.get("records") or []
+    if not records:
+        return f"No usage recorded for voice {voice_id} in the selected period."
+
+    lines = [f"Usage for voice {voice_id} ({len(records)} day(s)):"]
+    for record in records:
+        date_str = record["date"]
+        minutes = record["total_minutes_used"]
+        detail_parts: list[str] = [f"{minutes} min"]
+        model = record.get("model")
+        if model:
+            detail_parts.append(f"model={model}")
+        style = record.get("style")
+        if style:
+            detail_parts.append(f"style={style}")
+        language = record.get("language")
+        if language:
+            detail_parts.append(f"language={language}")
+        lines.append(f"  - {date_str}: " + ", ".join(detail_parts))
+    return "\n".join(lines)
+
+
+async def get_usage_history() -> str:
+    """Return a formatted summary of recent TTS API usage history.
+
+    No input parameters: the tool queries the SDK's advanced usage analytics
+    over a default recent window (the SDK requires an explicit time range).
+    Errors from the SDK are mapped to the same plain-text strings used
+    elsewhere in this module.
+    """
+    try:
+        api_key = resolve_api_key()
+    except ValueError as e:
+        return str(e)
+
+    start_time, end_time = _default_usage_range_datetimes()
+
+    client = SupertoneClient(api_key=api_key)
+    try:
+        history = await client.get_usage_history(
+            start_time=start_time,
+            end_time=end_time,
+        )
+    except SupertoneAuthError:
+        return "Authentication failed. Please verify your SUPERTONE_API_KEY."
+    except SupertoneRateLimitError:
+        return "Rate limit exceeded. Please wait and try again."
+    except SupertoneServerError as e:
+        return f"Supertone API server error ({e.status_code}). Please try again later."
+    except SupertoneConnectionError:
+        return (
+            "Failed to connect to Supertone API. Please check your network connection."
+        )
+    finally:
+        await client.aclose()
+
+    return format_usage_history(history)
+
+
+async def get_voice_usage(voice_id: str) -> str:
+    """Return a formatted usage summary for a single voice.
+
+    Validates that `voice_id` is a non-empty (post-strip) string before issuing
+    any API call (mirrors `get_voice`). The SDK voice-usage endpoint is a
+    date-range query with no voice filter, so the client wrapper fetches the
+    recent window and filters to this voice. Errors from the SDK are mapped to
+    the same plain-text strings used elsewhere in this module.
+    """
+    # Fail-fast input validation — no API call when voice_id is empty/whitespace.
+    if not isinstance(voice_id, str) or not voice_id.strip():
+        return "voice_id must not be empty."
+
+    try:
+        api_key = resolve_api_key()
+    except ValueError as e:
+        return str(e)
+
+    start_date, end_date = _default_usage_range_dates()
+
+    client = SupertoneClient(api_key=api_key)
+    try:
+        usage = await client.get_voice_usage(
+            voice_id=voice_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except SupertoneAuthError:
+        return "Authentication failed. Please verify your SUPERTONE_API_KEY."
+    except SupertoneRateLimitError:
+        return "Rate limit exceeded. Please wait and try again."
+    except SupertoneServerError as e:
+        return f"Supertone API server error ({e.status_code}). Please try again later."
+    except SupertoneConnectionError:
+        return (
+            "Failed to connect to Supertone API. Please check your network connection."
+        )
+    finally:
+        await client.aclose()
+
+    return format_voice_usage(usage)

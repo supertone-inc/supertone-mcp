@@ -1,84 +1,92 @@
-# Review Notes — ISSUE-026 (PR #42, get_custom_voice)
+# Review Notes — ISSUE-027 (PR #44, get_usage_history + get_voice_usage)
 
-Add a `get_custom_voice(voice_id)` MCP tool returning the detail of a single
-custom (cloned) voice by wrapping `custom_voices.get_custom_voice_async`, with
-empty-`voice_id` validation. Senior review + security audit.
+Two new read-only MCP tools exposing Supertone usage analytics. Senior review +
+security audit. Branch: issue/ISSUE-027-usage-tools.
 
 ## Code Review
 
-No Critical / High / Medium findings. Clean, pattern-consistent addition of a
-single read-only inspection tool.
-
-Verified against all five acceptance criteria:
-
-- **AC #1 (detail includes voice_id, name, description):** client
-  `TestGetCustomVoice::test_returns_parsed_detail` + handler
-  `TestGetCustomVoiceHandler::test_happy_path_returns_formatted_detail`. PASS.
-- **AC #2 (empty/whitespace → `voice_id must not be empty.`, no API call):**
-  `test_empty_voice_id_returns_validation_error_without_api_call` and
-  `test_whitespace_voice_id_returns_validation_error_without_api_call`, both
-  asserting `MC.assert_not_called()`. PASS.
-- **AC #3 (auth error string):** `test_auth_error_returns_formatted_string`. PASS.
-- **AC #4 (connection error string):**
-  `test_connection_error_returns_formatted_string`. PASS.
-- **AC #5 (server registers get_custom_voice with required voice_id):**
-  `test_get_custom_voice_tool_exists` + `test_get_custom_voice_voice_id_is_required`.
+### Scope verified against AC
+- AC1 (usage-history payload -> formatted per-period summary): covered by
+  `TestFormatUsageHistory::test_renders_per_period_summary` and
+  `TestGetUsageHistoryHandler::test_happy_path_returns_formatted_summary`. PASS.
+- AC2 (empty usage -> clear "no usage" message, NOT an error): formatter returns
+  `"No usage recorded for the selected period."`; test asserts `"error"` absent.
   PASS.
+- AC3 (voice usage -> formatted summary for that voice): covered by
+  `TestFormatVoiceUsage::test_renders_voice_summary` and the handler happy path.
+  PASS.
+- AC4 (empty/whitespace voice_id -> exact `voice_id must not be empty.`, no API
+  call): `test_empty_voice_id_*` / `test_whitespace_voice_id_*` assert
+  `SupertoneClient` is never constructed (`MC.assert_not_called()`). Reuses the
+  EXACT existing string from `get_voice`/`get_custom_voice`. PASS.
+- AC5 (either tool + mocked auth error -> standard auth string via
+  `_handle_sdk_errors`): client wrappers map `UnauthorizedErrorResponse` /
+  `ForbiddenErrorResponse` -> `SupertoneAuthError`; handlers return
+  `"Authentication failed. Please verify your SUPERTONE_API_KEY."` Covered for
+  BOTH methods (client layer) and BOTH handlers. PASS.
+- AC6 (tools/list includes both; get_voice_usage requires voice_id):
+  `TestUsageToolsRegistration` (existence, required/optional params,
+  descriptions). PASS.
 
-### Correctness
-- `SupertoneClient.get_custom_voice` mirrors the existing `edit_custom_voice` /
-  `search_custom_voices` mapping exactly: `voice_id` + `name` always set,
-  `description` added only when the SDK returns non-None (`getattr` + guard).
-  The `except` tuple is identical to every other wrapper.
-- **SDK shape verified** against the installed SDK
-  `models/getcustomvoiceresponse.py`: `GetCustomVoiceResponse` exposes only
-  `voice_id` (str), `name` (str), `description` (OptionalNullable[str]). There is
-  **no `created_at`** field. The issue spec's "optional created_at" was therefore
-  correctly NOT mapped — inventing it would violate "truthful to source data"
-  (same decision already documented for `format_custom_voice_list`). This is the
-  one place where implementation deliberately diverges from the literal AC wording,
-  and the divergence is correct.
-- Handler reuses the EXACT existing `voice_id must not be empty.` string and the
-  `get_voice` error-handling shape (auth/rate/5xx/connection), with `aclose()` in
-  `finally`.
-- `format_custom_voice_detail` reuses the `format_custom_voice_list` field style
-  (`Voice ID` / `Name` / `Description`), `description or "-"` placeholder.
+### SDK fidelity (truthful-to-source — recall ISSUE-026)
+Installed supertone 0.2.3 inspected before mapping:
+- `usage.get_usage_async(*, start_time, end_time, bucket_width=DAY,
+  breakdown_type=None, page_size=10, next_page_token=None)` ->
+  `UsageAnalyticsResponse(data: list[UsageBucket], total: float,
+  next_page_token)`. start/end REQUIRED (RFC3339). The wrapper supplies a
+  computed default 30-day UTC window and forwards only the optional params the
+  caller sets.
+- `usage.get_voice_usage_async(*, start_date, end_date)` ->
+  `GetUsageListV1Response(usages: list[GetUsageResponseV1Data])`. start/end
+  REQUIRED (YYYY-MM-DD). **No voice_id parameter exists** — it is a date-range
+  list, so the wrapper filters records client-side by `voice_id`. The only
+  truthful way to honor both the AC and the SDK. Documented in the docstring and
+  PR body.
+- Only fields that actually exist on the SDK models are mapped. `UsageResult.
+  api_key` (sensitive) and `GetUsageResponseV1Data.thumbnail_url` (out of scope)
+  are intentionally NOT surfaced. No invented fields — avoids the ISSUE-026
+  spec-vs-SDK drift class.
 
-### Edge cases / regressions
-- Empty + whitespace voice_id both rejected before any client construction.
-- No new validation surfaces beyond the empty guard; existing `_handle_sdk_errors`
-  chain unaffected; no other handlers/tools touched.
+### Lessons compliance
+- RL-001: five new TypedDicts default total=True; only genuinely nullable SDK
+  fields are `NotRequired`, verified against SDK `Optional[...]` declarations.
+  PASS.
+- RL-002: both new client methods exercise the full error-branch matrix
+  (Unauthorized, Forbidden, 429, 5xx, NoResponseError, ConnectError,
+  TimeoutException). PASS.
+- RL-004: `_handle_sdk_errors` remains `-> None` (pre-existing tech-debt, not
+  introduced here; both wrappers reuse the shared helper). No change.
+
+### Quality
+- Handlers mirror the established `get_credit_balance` / `get_voice` patterns
+  exactly (api-key resolution, client lifecycle in try/finally with `aclose()`,
+  identical error-string mapping). Consistent, maintainable.
+- ruff check + ruff format: clean on src and tests.
+- `uv run pytest`: 548 passed (495 baseline + 53 new). CI `test (3.12)` +
+  `test (3.13)`: PASS. publish/publish-registry correctly skipped (no release).
 
 ## Security Findings
-None. No hardcoded secrets (API key from `SUPERTONE_API_KEY` env); no injection
-surface (`voice_id` passed as a typed SDK kwarg / path param, not interpolated);
-input validated; no new dependencies.
+- No secrets, no injection surface (read-only GET endpoints; date strings are
+  server-generated, not user-controlled). The SDK `api_key` field returned by the
+  usage endpoint is deliberately NOT echoed into any user-facing output. No
+  Critical/High security findings.
 
-## review_lessons.md cross-check
-- **RL-001 (TypedDict nullability):** Reuses existing `CustomVoiceDict`
-  (`description = NotRequired`); no new `total=False` TypedDict. PASS.
-- **RL-002 (symmetric error branches):** Full matrix tested — 401, 403, 429, 5xx,
-  NoResponseError, httpx.ConnectError, httpx.TimeoutException. PASS.
-- **RL-003 (pagination):** N/A — single-object fetch, no pagination loop.
-- **RL-004 (`NoReturn` on `_handle_sdk_errors`):** pre-existing repo-wide tech-debt,
-  unchanged by this PR.
-- **RL-006 (404 mapping gap):** `get_custom_voice` does not surface a "custom voice
-  not found" string for a real 404, identical to existing `get_voice` /
-  `edit_custom_voice` / `delete_custom_voice`. Deliberate consistency choice; the
-  gap is an already-open repo-wide pattern in RL-006. NOT a new regression.
+## Follow-ups (non-blocking)
+- [Medium] RL-006 (error-mapping completeness): in production the two usage
+  endpoints raise `errors.SupertoneDefaultError` for 401/4XX/5XX (see SDK
+  `usage.py`). `_handle_sdk_errors` does NOT map `SupertoneDefaultError`, so a
+  real auth/server error from these endpoints would bubble raw instead of the
+  friendly UX string. NOT a regression: it mirrors the exact documented gap
+  already tracked for `get_voice` / `preview_voice` / `edit_custom_voice`
+  (RL-006, no 404 mapping) and is consistent with the whole codebase's posture.
+  The AC is satisfied as written (it says "verify via `_handle_sdk_errors`", and
+  tests mock the typed `UnauthorizedErrorResponse`, which the wrappers DO map).
+  The real fix — mapping `SupertoneDefaultError` by `raw_response.status_code`
+  in `_handle_sdk_errors` — is a cross-cutting tech-debt item to be handled once
+  for ALL wrappers, not bolted onto this PR. Logged in docs/sprint_state.md; no
+  blocking change applied. Severity Medium -> does not spawn a P0/P1 follow-up
+  per the review-triage rules.
 
-## Test Quality
-All 28 added tests (client 11, handler 11, formatter 3, server 4 — including
-import-fix) contain real assertions; no hollow tests. Each AC maps to at least
-one test.
-
-## Verification
-- `uv run pytest` → 495 passed (28 new over prior 467).
-- `uv run ruff check` → clean; `ruff format --check` → clean.
-- Checkpoint `test` / `smoke` bare `python3 -m pytest` hits the known
-  pre-existing pyenv-3.10 + pytest-asyncio collection INTERNALERROR
-  (false-negative); `uv run pytest` + CI (3.12/3.13) are authoritative.
-
-## Severity Summary
-No Critical/High/Medium findings. No follow-up issues required.
-`review_lessons.md` unchanged (no new preventable pattern). Confidence: High.
+## Verdict
+APPROVE. All ACs met, tests green (uv + CI), lessons honored, SDK-truthful. No
+Critical/High findings requiring in-review fixes. Confidence: High.

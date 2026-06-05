@@ -136,6 +136,76 @@ class CustomVoiceDict(TypedDict):
     description: NotRequired[str | None]
 
 
+class UsageResultDict(TypedDict):
+    """A single usage result within a time bucket (mirrors SDK `UsageResult`).
+
+    Per RL-001: only `minutes_used` is required in the SDK schema; the
+    breakdown fields (`voice_id`, `voice_name`, `model`) are optional
+    (populated only when a matching `breakdown_type` was requested), so they
+    are marked `NotRequired`. The SDK `api_key` field is intentionally NOT
+    surfaced (sensitive, never user-facing).
+    """
+
+    minutes_used: float
+    voice_id: NotRequired[str]
+    voice_name: NotRequired[str]
+    model: NotRequired[str]
+
+
+class UsageBucketDict(TypedDict):
+    """A time bucket of usage data (mirrors SDK `UsageBucket`).
+
+    All three fields are required in the SDK schema.
+    """
+
+    starting_at: str
+    ending_at: str
+    results: list[UsageResultDict]
+
+
+class UsageHistoryDict(TypedDict):
+    """Parsed advanced usage analytics (mirrors SDK `UsageAnalyticsResponse`).
+
+    The SDK `data` field is exposed here as `buckets` for readability. The SDK
+    `next_page_token` is nullable and not surfaced (v0.3 uses the SDK default
+    paging window per the spec); only `total` and `buckets` are rendered.
+    """
+
+    total: float
+    buckets: list[UsageBucketDict]
+
+
+class VoiceUsageRecordDict(TypedDict):
+    """A single per-voice/day usage record (mirrors SDK `GetUsageResponseV1Data`).
+
+    Per RL-001: `date` and `total_minutes_used` are required; the descriptive
+    fields (`name`, `style`, `language`, `model`) are nullable in the SDK and
+    marked `NotRequired`. The SDK `date_` field (Pydantic-aliased from `date`)
+    is mapped to `date`; the SDK `thumbnail_url` is intentionally not surfaced.
+    `voice_id` is the filter key and lives on the parent `VoiceUsageDict` rather
+    than being duplicated on each record.
+    """
+
+    date: str
+    total_minutes_used: float
+    name: NotRequired[str]
+    style: NotRequired[str]
+    language: NotRequired[str]
+    model: NotRequired[str]
+
+
+class VoiceUsageDict(TypedDict):
+    """Usage summary for a single voice.
+
+    The SDK voice-usage endpoint returns a date-range list of per-voice/day
+    records with NO voice_id query parameter; this wrapper filters that list
+    down to the requested `voice_id`. Both fields are required.
+    """
+
+    voice_id: str
+    records: list[VoiceUsageRecordDict]
+
+
 def generate_output_path(output_dir: str, output_format: str) -> Path:
     """Generate a unique output file path for an audio file.
 
