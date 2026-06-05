@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcp.types import AudioContent, TextContent
+
 from supertone_mcp.exceptions import (
     SupertoneAuthError,
     SupertoneConnectionError,
@@ -122,13 +123,61 @@ class TestValidatePitchShift:
 
 
 class TestValidateModel:
-    @pytest.mark.parametrize("model", ["sona_speech_1", "sona_speech_2_flash"])
+    # All 7 models supported by SDK 0.2.3 (ISSUE-021).
+    ALL_MODELS = [
+        "sona_speech_1",
+        "sona_speech_2",
+        "sona_speech_2_flash",
+        "sona_speech_2t",
+        "sona_speech_3t",
+        "supertonic_api_1",
+        "supertonic_api_3",
+    ]
+
+    @pytest.mark.parametrize("model", ALL_MODELS)
     def test_valid_models(self, model):
+        validate_model(model)
+
+    @pytest.mark.parametrize("model", ["sona_speech_3t", "supertonic_api_3"])
+    def test_new_models_accepted(self, model):
+        """Regression: the 2 new SDK 0.2.3 models were previously rejected."""
         validate_model(model)
 
     def test_invalid_model(self):
         with pytest.raises(ValueError, match=r'Invalid model: "bad_model"'):
             validate_model("bad_model")
+
+    def test_invalid_model_exact_message(self):
+        """Unknown model raises with the full 7-model supported list."""
+        expected = (
+            'Invalid model: "sona_speech_99". '
+            "Supported models: sona_speech_1, sona_speech_2, "
+            "sona_speech_2_flash, sona_speech_2t, sona_speech_3t, "
+            "supertonic_api_1, supertonic_api_3."
+        )
+        with pytest.raises(ValueError) as exc_info:
+            validate_model("sona_speech_99")
+        assert str(exc_info.value) == expected
+
+
+class TestModelConstants:
+    def test_supported_models_exact_set(self):
+        from supertone_mcp.constants import SUPPORTED_MODELS
+
+        assert SUPPORTED_MODELS == [
+            "sona_speech_1",
+            "sona_speech_2",
+            "sona_speech_2_flash",
+            "sona_speech_2t",
+            "sona_speech_3t",
+            "supertonic_api_1",
+            "supertonic_api_3",
+        ]
+
+    def test_default_model_is_flash(self):
+        from supertone_mcp.constants import DEFAULT_MODEL
+
+        assert DEFAULT_MODEL == "sona_speech_2_flash"
 
 
 class TestResolveApiKey:
@@ -540,11 +589,31 @@ class TestTextToSpeechHandler:
         assert Path(path).read_bytes() == _AUDIO_DATA
 
     @pytest.mark.asyncio
-    async def test_default_model_is_sona_speech_1(self):
-        """DEFAULT_MODEL constant changed to sona_speech_1."""
+    async def test_default_model_is_flash(self):
+        """DEFAULT_MODEL is sona_speech_2_flash as of SDK 0.2.3 (ISSUE-021)."""
         from supertone_mcp.constants import DEFAULT_MODEL
 
-        assert DEFAULT_MODEL == "sona_speech_1"
+        assert DEFAULT_MODEL == "sona_speech_2_flash"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("model", ["sona_speech_3t", "supertonic_api_3"])
+    async def test_new_models_invoke_synthesize_path(self, tmp_path, model):
+        """The 2 new SDK 0.2.3 models pass validation and reach the stream
+        path (no validation error returned)."""
+        with (
+            patch.dict(os.environ, _env_files(tmp_path)),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            stream = _mock_stream()
+            inst.synthesize_stream = stream
+            inst.aclose = AsyncMock()
+
+            result = await text_to_speech(text="hi", model=model)
+
+        # No validation error string; a file was saved instead.
+        assert "Invalid model" not in result
+        assert "Audio file saved:" in result
 
     @pytest.mark.asyncio
     async def test_mutagen_duration(self, tmp_path):

@@ -150,11 +150,14 @@ class TestConstants:
     def test_supported_models(self):
         assert "sona_speech_2_flash" in SUPPORTED_MODELS
         assert "sona_speech_1" in SUPPORTED_MODELS
+        # SDK 0.2.3 additions (ISSUE-021)
+        assert "sona_speech_3t" in SUPPORTED_MODELS
+        assert "supertonic_api_3" in SUPPORTED_MODELS
 
     def test_defaults(self):
         assert DEFAULT_LANGUAGE == "ko"
         assert DEFAULT_FORMAT == "mp3"
-        assert DEFAULT_MODEL == "sona_speech_1"
+        assert DEFAULT_MODEL == "sona_speech_2_flash"
         assert DEFAULT_SPEED == 1.0
         assert DEFAULT_PITCH_SHIFT == 0
         assert DEFAULT_VOICE_ID == "2d5a380030e78fcab0c82a"

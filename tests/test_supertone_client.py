@@ -1780,3 +1780,59 @@ class TestDeleteCustomVoice:
         )
         with pytest.raises(SupertoneConnectionError):
             await cv_crud_client.delete_custom_voice(voice_id="cv_1")
+
+
+class TestModelMapResolution:
+    """ISSUE-021: confirm the dynamically-built model maps resolve the 2 new
+    SDK 0.2.3 models (`sona_speech_3t`, `supertonic_api_3`)."""
+
+    @pytest.mark.parametrize("model", ["sona_speech_3t", "supertonic_api_3"])
+    def test_synthesize_model_map_contains_new_models(self, model):
+        from supertone_mcp.supertone_client import _MODEL_MAP
+
+        assert model in _MODEL_MAP
+        assert _MODEL_MAP[model].value == model
+
+    @pytest.mark.parametrize("model", ["sona_speech_3t", "supertonic_api_3"])
+    def test_predict_model_map_contains_new_models(self, model):
+        from supertone_mcp.supertone_client import _PREDICT_MODEL_MAP
+
+        assert model in _PREDICT_MODEL_MAP
+        assert _PREDICT_MODEL_MAP[model].value == model
+
+    def test_model_maps_have_all_seven_models(self):
+        from supertone_mcp.supertone_client import _MODEL_MAP, _PREDICT_MODEL_MAP
+
+        expected = {
+            "sona_speech_1",
+            "sona_speech_2",
+            "sona_speech_2_flash",
+            "sona_speech_2t",
+            "sona_speech_3t",
+            "supertonic_api_1",
+            "supertonic_api_3",
+        }
+        assert expected <= set(_MODEL_MAP)
+        assert expected <= set(_PREDICT_MODEL_MAP)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("model", ["sona_speech_3t", "supertonic_api_3"])
+    async def test_synthesize_passes_new_model_enum_to_sdk(self, client, model):
+        httpx_resp = _make_httpx_response()
+        sdk_resp = _make_create_speech_response(httpx_resp)
+        client._sdk.text_to_speech.create_speech_async = AsyncMock(
+            return_value=sdk_resp
+        )
+
+        await client.synthesize(
+            voice_id="v1",
+            text="hi",
+            language="en",
+            output_format="mp3",
+            model=model,
+            speed=1.0,
+            pitch_shift=0,
+        )
+
+        call_kwargs = client._sdk.text_to_speech.create_speech_async.call_args[1]
+        assert call_kwargs["model"].value == model
