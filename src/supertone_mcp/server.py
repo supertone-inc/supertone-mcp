@@ -18,7 +18,7 @@ mcp = FastMCP("supertone-tts")
         "hear text read aloud, create narration or voiceover, "
         "generate voice audio, preview how text sounds when spoken, "
         "or convert any writing into spoken audio. "
-        "Supports 23 languages including Korean, English, and Japanese. "
+        "Supports 31 languages including Korean, English, and Japanese. "
         "There is no text-length limit: long text is automatically split "
         "(auto-chunked) by the service, and credit usage and latency scale "
         "with the length of the text. "
@@ -87,7 +87,7 @@ async def text_to_speech(
             If omitted, a default Korean voice is used.
         language: Language code for the speech output.
             "ko" (Korean, default), "en" (English), "ja" (Japanese),
-            and 20+ more. Must match the text language for best results.
+            and 28 more (31 total). Must match the text language for best results.
         output_format: Audio file format: "mp3" (default) or "wav".
             Use "wav" for higher quality, "mp3" for smaller files.
         model: TTS model. One of "sona_speech_1", "sona_speech_2",

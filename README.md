@@ -200,7 +200,7 @@ All parameters optional. With no filters → full catalog. With any filter → f
 | Tool | Required | Optional |
 |------|----------|----------|
 | `get_credit_balance` | — | — |
-| `get_usage_history` | — | time-window params (SDK defaults to a recent window) |
+| `get_usage_history` | — | — (reports a recent default window) |
 | `get_voice_usage` | `voice_id` | — |
 
 ## Development
