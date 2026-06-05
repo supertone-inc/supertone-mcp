@@ -283,7 +283,10 @@ class TestToolRegistration:
         desc = tool.description
         # Core wording from the UX spec — does not synthesize audio
         assert "duration" in desc.lower()
-        assert "300" in desc
+        # ISSUE-024: the 300-char hard limit was removed; the description must
+        # NOT claim a 300-character cap and should note auto-chunking instead.
+        assert "300" not in desc
+        assert "chunk" in desc.lower()
         # Mentions text_to_speech parameter parity
         assert "text_to_speech" in desc
         # Mentions the credit/cost rationale

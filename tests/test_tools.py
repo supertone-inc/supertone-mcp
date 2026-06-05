@@ -777,6 +777,31 @@ class TestTextToSpeechHandler:
         assert result == "Text must not be empty."
 
     @pytest.mark.asyncio
+    async def test_long_text_passes_through_to_sdk_without_length_error(self, tmp_path):
+        """ISSUE-024 AC: >300-char text reaches the SDK synthesize path.
+
+        The 300-char hard cap never applied to text_to_speech (the synthesize
+        SDK auto-chunks), so a 500-char input must produce audio with no
+        length-validation error and forward the full text to the SDK.
+        """
+        long_text = "a" * 500
+        with (
+            patch.dict(os.environ, _env_files(tmp_path)),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.synthesize = _mock_synthesize()
+            inst.synthesize_stream = _mock_stream()
+            inst.aclose = AsyncMock()
+
+            result = await text_to_speech(text=long_text)
+
+        assert "exceeds the maximum length" not in result
+        assert "Audio file saved:" in result
+        inst.synthesize.assert_awaited_once()
+        assert inst.synthesize.call_args.kwargs["text"] == long_text
+
+    @pytest.mark.asyncio
     async def test_invalid_language_returns_error(self):
         env = {"SUPERTONE_API_KEY": "test-key"}
         with patch.dict(os.environ, env):
@@ -2625,34 +2650,17 @@ class TestPredictDurationHandler:
         assert result.endswith("(credit usage is proportional to duration).")
 
     @pytest.mark.asyncio
-    async def test_text_over_300_chars_returns_validation_error_without_api_call(self):
-        """AC #2: text length >300 chars rejected before any API call."""
+    async def test_long_text_passes_through_to_sdk_without_length_error(self):
+        """ISSUE-024 AC: >300-char text is no longer rejected; SDK is invoked.
+
+        The 300-char hard cap was removed in ISSUE-024 — long text is delegated
+        to the SDK's internal auto-chunking. A 500-char input must NOT return a
+        length-validation error and must reach the SDK predict_duration path.
+        """
         from supertone_mcp.tools import predict_duration
 
         env = {"SUPERTONE_API_KEY": "key"}
-        long_text = "a" * 301
-        with (
-            patch.dict(os.environ, env),
-            patch("supertone_mcp.tools.SupertoneClient") as MC,
-        ):
-            inst = MC.return_value
-            inst.predict_duration = AsyncMock()
-            inst.aclose = AsyncMock()
-
-            result = await predict_duration(text=long_text)
-
-        assert "exceeds the maximum length of 300 characters" in result
-        assert "received: 301" in result
-        MC.assert_not_called()
-        inst.predict_duration.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_text_exactly_300_chars_passes_validation(self):
-        """Boundary: 300 chars is allowed (edge case per UX spec §4.1)."""
-        from supertone_mcp.tools import predict_duration
-
-        env = {"SUPERTONE_API_KEY": "key"}
-        text_300 = "a" * 300
+        long_text = "a" * 500
         with (
             patch.dict(os.environ, env),
             patch("supertone_mcp.tools.SupertoneClient") as MC,
@@ -2661,10 +2669,12 @@ class TestPredictDurationHandler:
             inst.predict_duration = AsyncMock(return_value=12.5)
             inst.aclose = AsyncMock()
 
-            result = await predict_duration(text=text_300)
+            result = await predict_duration(text=long_text)
 
-        # Validation passed and the API was invoked.
+        # No length-validation error surfaced; SDK was invoked with the long text.
+        assert "exceeds the maximum length" not in result
         inst.predict_duration.assert_awaited_once()
+        assert inst.predict_duration.call_args.kwargs["text"] == long_text
         assert result.startswith("Predicted duration: 12.50s")
 
     @pytest.mark.asyncio
