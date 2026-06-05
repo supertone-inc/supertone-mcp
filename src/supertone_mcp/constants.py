@@ -102,7 +102,11 @@ VALID_OUTPUT_MODES: list[str] = [
     OUTPUT_MODE_BOTH,
 ]
 DEFAULT_OUTPUT_MODE: str = OUTPUT_MODE_FILES
-DEFAULT_AUTOPLAY: bool = True
+# ISSUE-022: autoplay is a per-call parameter (default False) on
+# text_to_speech, NOT an env-driven behavior. The previous DEFAULT_AUTOPLAY
+# constant (env-driven, default True) was removed. The handler signature
+# carries the False default directly.
+DEFAULT_AUTOPLAY: bool = False
 
 # --- ISSUE-019: clone_voice constraints ---
 # Per FR-017 / UX spec §2.8: WAV/MP3 only, exactly one file, ≤3MB.

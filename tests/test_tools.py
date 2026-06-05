@@ -28,15 +28,14 @@ from supertone_mcp.tools import (
     get_voice,
     preview_voice,
     resolve_api_key,
-    resolve_autoplay,
     resolve_output_dir,
-    resolve_output_mode,
     resolve_voice_id,
     search_voice,
     text_to_speech,
     validate_language,
     validate_model,
     validate_output_format,
+    validate_output_mode,
     validate_pitch_shift,
     validate_speed,
     validate_text,
@@ -218,30 +217,30 @@ class TestResolveOutputDir:
             assert "custom" in result
 
 
-class TestResolveOutputMode:
-    def test_default_is_files(self):
-        with patch.dict(os.environ, {}, clear=True):
-            assert resolve_output_mode() == "files"
+class TestValidateOutputMode:
+    """ISSUE-022: output mode is validated per-call from the argument, not env."""
 
     @pytest.mark.parametrize("mode", ["files", "resources", "both"])
-    def test_valid_modes(self, mode):
-        env = {"SUPERTONE_MCP_OUTPUT_MODE": mode}
-        with patch.dict(os.environ, env):
-            assert resolve_output_mode() == mode
+    def test_valid_modes_pass(self, mode):
+        # Returns the normalized mode; no exception for valid values.
+        assert validate_output_mode(mode) == mode
 
     def test_case_insensitive(self):
-        env = {"SUPERTONE_MCP_OUTPUT_MODE": "RESOURCES"}
-        with patch.dict(os.environ, env):
-            assert resolve_output_mode() == "resources"
+        assert validate_output_mode("RESOURCES") == "resources"
 
     def test_invalid_mode_raises(self):
-        env = {"SUPERTONE_MCP_OUTPUT_MODE": "invalid"}
+        with pytest.raises(
+            ValueError,
+            match='Invalid output mode: "invalid"',
+        ):
+            validate_output_mode("invalid")
+
+    def test_does_not_read_env(self):
+        """The validator must ignore SUPERTONE_MCP_OUTPUT_MODE entirely."""
+        env = {"SUPERTONE_MCP_OUTPUT_MODE": "resources"}
         with patch.dict(os.environ, env):
-            with pytest.raises(
-                ValueError,
-                match='Invalid output mode: "invalid"',
-            ):
-                resolve_output_mode()
+            # Passing "files" explicitly must yield files regardless of env.
+            assert validate_output_mode("files") == "files"
 
 
 class TestResolveVoiceId:
@@ -253,29 +252,6 @@ class TestResolveVoiceId:
         env = {"SUPERTONE_MCP_VOICE_ID": "my-custom-voice"}
         with patch.dict(os.environ, env):
             assert resolve_voice_id() == "my-custom-voice"
-
-
-class TestResolveAutoplay:
-    def test_default_is_true(self):
-        with patch.dict(os.environ, {}, clear=True):
-            assert resolve_autoplay() is True
-
-    @pytest.mark.parametrize("val", ["true", "1", "yes", ""])
-    def test_truthy_values(self, val):
-        env = {"SUPERTONE_MCP_AUTOPLAY": val}
-        with patch.dict(os.environ, env):
-            assert resolve_autoplay() is True
-
-    @pytest.mark.parametrize("val", ["false", "0", "no"])
-    def test_falsy_values(self, val):
-        env = {"SUPERTONE_MCP_AUTOPLAY": val}
-        with patch.dict(os.environ, env):
-            assert resolve_autoplay() is False
-
-    def test_case_insensitive_disable(self):
-        env = {"SUPERTONE_MCP_AUTOPLAY": "FALSE"}
-        with patch.dict(os.environ, env):
-            assert resolve_autoplay() is False
 
 
 class TestAutoplay:
@@ -799,9 +775,11 @@ class TestTextToSpeechHandler:
         assert "SUPERTONE_API_KEY" in result
 
     @pytest.mark.asyncio
-    async def test_resources_mode_returns_audio_content(self):
+    async def test_default_output_mode_is_files_ignoring_env(self, tmp_path):
+        """AC: no output_mode arg => files behavior, even when the removed
+        SUPERTONE_MCP_OUTPUT_MODE env var asks for resources."""
         env = {
-            "SUPERTONE_API_KEY": "key",
+            **_env_files(tmp_path),
             "SUPERTONE_MCP_OUTPUT_MODE": "resources",
         }
         with (
@@ -813,6 +791,25 @@ class TestTextToSpeechHandler:
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello")
+
+        # files behavior: plain-text response + file on disk
+        assert isinstance(result, str)
+        assert "Audio file saved:" in result
+        files = list(tmp_path.iterdir())
+        assert len(files) == 1
+
+    @pytest.mark.asyncio
+    async def test_resources_mode_returns_audio_content(self):
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.synthesize_stream = _mock_stream()
+            inst.aclose = AsyncMock()
+
+            result = await text_to_speech(text="Hello", output_mode="resources")
 
         assert isinstance(result, list)
         assert len(result) == 2
@@ -825,7 +822,6 @@ class TestTextToSpeechHandler:
     async def test_resources_mode_no_file_written(self, tmp_path):
         env = {
             "SUPERTONE_API_KEY": "key",
-            "SUPERTONE_MCP_OUTPUT_MODE": "resources",
             "SUPERTONE_OUTPUT_DIR": str(tmp_path),
         }
         with (
@@ -836,17 +832,14 @@ class TestTextToSpeechHandler:
             inst.synthesize_stream = _mock_stream()
             inst.aclose = AsyncMock()
 
-            await text_to_speech(text="Hello")
+            await text_to_speech(text="Hello", output_mode="resources")
 
         assert list(tmp_path.iterdir()) == []
 
     @pytest.mark.asyncio
     async def test_resources_mode_collects_in_memory(self):
         """Resources mode collects all chunks in memory."""
-        env = {
-            "SUPERTONE_API_KEY": "key",
-            "SUPERTONE_MCP_OUTPUT_MODE": "resources",
-        }
+        env = {"SUPERTONE_API_KEY": "key"}
         with (
             patch.dict(os.environ, env),
             patch("supertone_mcp.tools.SupertoneClient") as MC,
@@ -855,7 +848,7 @@ class TestTextToSpeechHandler:
             inst.synthesize_stream = _mock_stream()
             inst.aclose = AsyncMock()
 
-            result = await text_to_speech(text="Hello")
+            result = await text_to_speech(text="Hello", output_mode="resources")
 
         decoded = base64.b64decode(result[0].data)
         assert decoded == _AUDIO_DATA
@@ -864,7 +857,6 @@ class TestTextToSpeechHandler:
     async def test_both_mode_returns_audio_and_saves(self, tmp_path):
         env = {
             "SUPERTONE_API_KEY": "key",
-            "SUPERTONE_MCP_OUTPUT_MODE": "both",
             "SUPERTONE_OUTPUT_DIR": str(tmp_path),
         }
         with (
@@ -875,7 +867,7 @@ class TestTextToSpeechHandler:
             inst.synthesize_stream = _mock_stream()
             inst.aclose = AsyncMock()
 
-            result = await text_to_speech(text="Hello")
+            result = await text_to_speech(text="Hello", output_mode="both")
 
         assert isinstance(result, list)
         assert len(result) == 2
@@ -889,10 +881,7 @@ class TestTextToSpeechHandler:
 
     @pytest.mark.asyncio
     async def test_resources_mode_wav_mime_type(self):
-        env = {
-            "SUPERTONE_API_KEY": "key",
-            "SUPERTONE_MCP_OUTPUT_MODE": "resources",
-        }
+        env = {"SUPERTONE_API_KEY": "key"}
         with (
             patch.dict(os.environ, env),
             patch("supertone_mcp.tools.SupertoneClient") as MC,
@@ -901,26 +890,29 @@ class TestTextToSpeechHandler:
             inst.synthesize_stream = _mock_stream(chunks=[b"\x00" * 10])
             inst.aclose = AsyncMock()
 
-            result = await text_to_speech(text="Hello", output_format="wav")
+            result = await text_to_speech(
+                text="Hello", output_format="wav", output_mode="resources"
+            )
 
         assert result[0].mimeType == "audio/wav"
 
     @pytest.mark.asyncio
-    async def test_invalid_output_mode_returns_error(self):
-        env = {
-            "SUPERTONE_API_KEY": "key",
-            "SUPERTONE_MCP_OUTPUT_MODE": "invalid",
-        }
-        with patch.dict(os.environ, env):
-            result = await text_to_speech(text="Hello")
+    async def test_invalid_output_mode_returns_error_no_api_call(self):
+        """AC: output_mode="invalid" => validation error, no client built."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            result = await text_to_speech(text="Hello", output_mode="invalid")
+
         assert 'Invalid output mode: "invalid"' in result
+        # No API call: the client must never be constructed.
+        MC.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_resources_mode_base64_encoding(self):
-        env = {
-            "SUPERTONE_API_KEY": "key",
-            "SUPERTONE_MCP_OUTPUT_MODE": "resources",
-        }
+        env = {"SUPERTONE_API_KEY": "key"}
         with (
             patch.dict(os.environ, env),
             patch("supertone_mcp.tools.SupertoneClient") as MC,
@@ -929,19 +921,16 @@ class TestTextToSpeechHandler:
             inst.synthesize_stream = _mock_stream()
             inst.aclose = AsyncMock()
 
-            result = await text_to_speech(text="Hello")
+            result = await text_to_speech(text="Hello", output_mode="resources")
 
         decoded = base64.b64decode(result[0].data)
         assert decoded == _AUDIO_DATA
 
     @pytest.mark.asyncio
-    async def test_autoplay_called_after_streaming(self, tmp_path):
-        env = {
-            **_env_files(tmp_path),
-            "SUPERTONE_MCP_AUTOPLAY": "true",
-        }
+    async def test_autoplay_true_invokes_autoplay(self, tmp_path):
+        """AC: autoplay=True on macOS invokes _autoplay."""
         with (
-            patch.dict(os.environ, env),
+            patch.dict(os.environ, _env_files(tmp_path)),
             patch("supertone_mcp.tools.SupertoneClient") as MC,
             patch("supertone_mcp.tools._autoplay") as mock_ap,
         ):
@@ -949,17 +938,19 @@ class TestTextToSpeechHandler:
             inst.synthesize_stream = _mock_stream()
             inst.aclose = AsyncMock()
 
-            await text_to_speech(text="Hello")
+            await text_to_speech(text="Hello", autoplay=True)
 
         mock_ap.assert_called_once()
         call_args = mock_ap.call_args
         assert call_args[0][2] == "mp3"
 
     @pytest.mark.asyncio
-    async def test_autoplay_not_called_when_disabled(self, tmp_path):
+    async def test_autoplay_defaults_false_ignoring_env(self, tmp_path):
+        """AC: no autoplay arg => not played, even if the removed
+        SUPERTONE_MCP_AUTOPLAY env var is set true."""
         env = {
             **_env_files(tmp_path),
-            "SUPERTONE_MCP_AUTOPLAY": "false",
+            "SUPERTONE_MCP_AUTOPLAY": "true",
         }
         with (
             patch.dict(os.environ, env),

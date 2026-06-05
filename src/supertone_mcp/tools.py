@@ -128,6 +128,26 @@ def validate_model(model: str) -> None:
         )
 
 
+def validate_output_mode(mode: str) -> str:
+    """Validate the per-call `output_mode` argument (ISSUE-022).
+
+    Replaces the former `resolve_output_mode()` env read. The output mode is
+    now decided per call via the `text_to_speech` `output_mode` parameter;
+    the `SUPERTONE_MCP_OUTPUT_MODE` environment variable is no longer
+    consulted for behavior control.
+
+    Returns the case-normalized mode on success; raises `ValueError` with the
+    UX-spec wording for an unknown mode.
+    """
+    normalized = mode.lower()
+    if normalized not in VALID_OUTPUT_MODES:
+        raise ValueError(
+            f'Invalid output mode: "{mode}". '
+            f"Valid modes: {', '.join(VALID_OUTPUT_MODES)}."
+        )
+    return normalized
+
+
 def validate_audio_path(audio_path: str) -> None:
     """Validate the audio path for `clone_voice` (ISSUE-019).
 
@@ -183,20 +203,6 @@ def resolve_voice_id() -> str:
     return os.environ.get("SUPERTONE_MCP_VOICE_ID", DEFAULT_VOICE_ID)
 
 
-def resolve_output_mode() -> str:
-    """Resolve the output mode from environment or default.
-
-    Valid modes: "files", "resources", "both".
-    """
-    mode = os.environ.get("SUPERTONE_MCP_OUTPUT_MODE", DEFAULT_OUTPUT_MODE).lower()
-    if mode not in VALID_OUTPUT_MODES:
-        raise ValueError(
-            f'Invalid output mode: "{mode}". '
-            f"Valid modes: {', '.join(VALID_OUTPUT_MODES)}."
-        )
-    return mode
-
-
 def resolve_output_dir() -> str:
     """Resolve the output directory from environment or default."""
     output_dir = os.environ.get("SUPERTONE_OUTPUT_DIR", DEFAULT_OUTPUT_DIR)
@@ -215,18 +221,41 @@ def ensure_output_dir(path: str) -> None:
         )
 
 
-# --- Autoplay ---
+# --- Migration warning (ISSUE-022) ---
+
+# Behavior-control env vars removed in ISSUE-022. If a user still has them set,
+# emit a one-time stderr warning (per process) to aid migration. These vars are
+# NO LONGER read for behavior — output mode and autoplay are per-call params.
+_REMOVED_BEHAVIOR_ENV_VARS = (
+    "SUPERTONE_MCP_OUTPUT_MODE",
+    "SUPERTONE_MCP_AUTOPLAY",
+)
+_migration_warning_emitted = False
 
 
-def resolve_autoplay() -> bool:
-    """Resolve whether autoplay is enabled from environment.
+def _warn_removed_behavior_env_vars() -> None:
+    """Emit a one-time stderr warning if removed behavior env vars are set.
 
-    Default is True (always autoplay). Set SUPERTONE_MCP_AUTOPLAY=false to disable.
+    Does NOT change behavior (the vars are ignored regardless). Fires at most
+    once per process. Logging goes to stderr only — stdout is reserved for the
+    MCP stdio protocol.
     """
-    val = os.environ.get("SUPERTONE_MCP_AUTOPLAY", "").lower()
-    if val in ("false", "0", "no"):
-        return False
-    return True
+    global _migration_warning_emitted
+    if _migration_warning_emitted:
+        return
+    present = [v for v in _REMOVED_BEHAVIOR_ENV_VARS if os.environ.get(v)]
+    if present:
+        _migration_warning_emitted = True
+        print(
+            f"[supertone-mcp] WARNING: {', '.join(present)} is set but no longer "
+            "read. Output mode and autoplay are now per-call parameters of "
+            "text_to_speech (output_mode, autoplay). autoplay now defaults to "
+            "false. See the migration guide.",
+            file=sys.stderr,
+        )
+
+
+# --- Autoplay ---
 
 
 def _autoplay(
@@ -361,12 +390,24 @@ async def text_to_speech(
     speed: float | None = None,
     pitch_shift: int | None = None,
     style: str | None = None,
+    output_mode: str | None = None,
+    autoplay: bool = False,
 ) -> str | list:
     """Convert text to speech using Supertone TTS API.
 
-    Returns a plain-text response string or a list of Content objects
-    depending on the output mode (SUPERTONE_MCP_OUTPUT_MODE env var).
+    Output mode and autoplay are decided PER CALL (ISSUE-022):
+      - `output_mode`: "files" (default), "resources", or "both". Resolved to
+        `DEFAULT_OUTPUT_MODE` when None. The removed `SUPERTONE_MCP_OUTPUT_MODE`
+        env var is NO LONGER read.
+      - `autoplay`: defaults to False. The removed `SUPERTONE_MCP_AUTOPLAY`
+        env var is NO LONGER read.
+
+    Returns a plain-text response string ("files" mode) or a list of Content
+    objects ("resources"/"both" modes).
     """
+    # Migration aid: warn once if the removed behavior env vars are set.
+    _warn_removed_behavior_env_vars()
+
     # Apply defaults
     voice_id = voice_id or resolve_voice_id()
     language = language or DEFAULT_LANGUAGE
@@ -374,11 +415,12 @@ async def text_to_speech(
     model = model or DEFAULT_MODEL
     speed = speed if speed is not None else DEFAULT_SPEED
     pitch_shift = pitch_shift if pitch_shift is not None else DEFAULT_PITCH_SHIFT
+    output_mode_arg = output_mode if output_mode is not None else DEFAULT_OUTPUT_MODE
 
     # Validate inputs
     try:
         api_key = resolve_api_key()
-        output_mode = resolve_output_mode()
+        output_mode = validate_output_mode(output_mode_arg)
         validate_text(text)
         validate_language(language)
         validate_output_format(output_format)
@@ -486,8 +528,9 @@ async def text_to_speech(
 
     audio_bytes = memory_buffer.getvalue() if collect_in_memory else None
 
-    # Autoplay after streaming completes
-    if resolve_autoplay():
+    # Autoplay after streaming completes — driven by the per-call argument
+    # (default False). The removed SUPERTONE_MCP_AUTOPLAY env var is not read.
+    if autoplay:
         _autoplay(file_path_str, audio_bytes, output_format)
 
     # Format response based on output mode

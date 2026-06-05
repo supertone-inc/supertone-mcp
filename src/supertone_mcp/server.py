@@ -16,7 +16,10 @@ mcp = FastMCP("supertone-tts")
         "generate voice audio, preview how text sounds when spoken, "
         "or convert any writing into spoken audio. "
         "Supports 23 languages including Korean, English, and Japanese. "
-        "Audio is automatically played back on macOS. "
+        "Set output_mode ('files', 'resources', or 'both') to control how audio "
+        "is returned, and autoplay=true to play it back on macOS. These per-call "
+        "parameters REPLACE the removed SUPERTONE_MCP_OUTPUT_MODE and "
+        "SUPERTONE_MCP_AUTOPLAY environment variables; autoplay now defaults to false. "
         "A default voice is already configured -- just call this tool directly. "
         "Only call search_voice if the user explicitly asks to change or browse voices."
     ),
@@ -30,6 +33,8 @@ async def text_to_speech(
     speed: float | None = None,
     pitch_shift: int | None = None,
     style: str | None = None,
+    output_mode: str | None = None,
+    autoplay: bool = False,
 ) -> str | list:
     """Generate natural-sounding speech audio from text.
 
@@ -55,6 +60,14 @@ async def text_to_speech(
         style: Emotion or tone of the voice (e.g., "neutral", "happy",
             "sad", "angry"). Available styles vary by voice --
             call search_voice to see what each voice supports.
+        output_mode: How the audio is returned. "files" (default) saves the
+            audio to disk and returns a plain-text summary; "resources"
+            returns the audio inline (AudioContent) without writing a file;
+            "both" does both. REPLACES the removed SUPERTONE_MCP_OUTPUT_MODE
+            env var, which is no longer read.
+        autoplay: When true, plays the generated audio on macOS (afplay).
+            Defaults to false. REPLACES the removed SUPERTONE_MCP_AUTOPLAY
+            env var, which is no longer read.
     """
     return await tools.text_to_speech(
         text=text,
@@ -65,6 +78,8 @@ async def text_to_speech(
         speed=speed,
         pitch_shift=pitch_shift,
         style=style,
+        output_mode=output_mode,
+        autoplay=autoplay,
     )
 
 
