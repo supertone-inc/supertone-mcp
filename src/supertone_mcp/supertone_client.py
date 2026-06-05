@@ -609,6 +609,44 @@ class SupertoneClient:
         ) as exc:
             _handle_sdk_errors(exc)
 
+    async def get_custom_voice(self, voice_id: str) -> CustomVoiceDict:
+        """Fetch the detail of a single custom (cloned) voice by ID.
+
+        Wraps `custom_voices.get_custom_voice_async` (ISSUE-026) and maps
+        the SDK `GetCustomVoiceResponse` into a `CustomVoiceDict`. The SDK
+        schema exposes `voice_id`, `name`, and a nullable `description`
+        (there is NO `created_at` field — verified against the installed
+        SDK `models/getcustomvoiceresponse.py`), so `description` is only
+        included when the SDK returned a non-None value, matching the
+        `search_custom_voices` / `edit_custom_voice` mapping convention.
+
+        Errors are mapped through `_handle_sdk_errors` like the other
+        wrappers.
+        """
+        try:
+            response = await self._sdk.custom_voices.get_custom_voice_async(
+                voice_id=voice_id,
+            )
+        except (
+            UnauthorizedErrorResponse,
+            ForbiddenErrorResponse,
+            TooManyRequestsErrorResponse,
+            InternalServerErrorResponse,
+            NoResponseError,
+            httpx.ConnectError,
+            httpx.TimeoutException,
+        ) as exc:
+            _handle_sdk_errors(exc)
+
+        result: CustomVoiceDict = {
+            "voice_id": response.voice_id,
+            "name": response.name,
+        }
+        resp_description = getattr(response, "description", None)
+        if resp_description is not None:
+            result["description"] = resp_description
+        return result
+
     async def aclose(self) -> None:
         """Close the underlying SDK HTTP client."""
         # The SDK uses httpx internally; close its async client if available

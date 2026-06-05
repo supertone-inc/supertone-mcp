@@ -1940,6 +1940,129 @@ class TestDeleteCustomVoice:
             await cv_crud_client.delete_custom_voice(voice_id="cv_1")
 
 
+def _make_get_custom_voice_response(
+    voice_id: str = "cv_abc123",
+    name: str = "MyVoice",
+    description: str | None = "warm narrator",
+):
+    """Build a mock GetCustomVoiceResponse for get_custom_voice_async."""
+    mock = MagicMock()
+    mock.voice_id = voice_id
+    mock.name = name
+    mock.description = description
+    return mock
+
+
+class TestGetCustomVoice:
+    """Tests for SupertoneClient.get_custom_voice (ISSUE-026)."""
+
+    @pytest.mark.asyncio
+    async def test_returns_parsed_detail(self, cv_crud_client):
+        resp = _make_get_custom_voice_response(
+            voice_id="cv_abc123", name="MyVoice", description="warm narrator"
+        )
+        cv_crud_client._sdk.custom_voices.get_custom_voice_async = AsyncMock(
+            return_value=resp
+        )
+
+        result = await cv_crud_client.get_custom_voice(voice_id="cv_abc123")
+
+        assert result == {
+            "voice_id": "cv_abc123",
+            "name": "MyVoice",
+            "description": "warm narrator",
+        }
+
+    @pytest.mark.asyncio
+    async def test_passes_voice_id_to_sdk(self, cv_crud_client):
+        resp = _make_get_custom_voice_response(voice_id="cv_xyz")
+        cv_crud_client._sdk.custom_voices.get_custom_voice_async = AsyncMock(
+            return_value=resp
+        )
+
+        await cv_crud_client.get_custom_voice(voice_id="cv_xyz")
+
+        call_kwargs = (
+            cv_crud_client._sdk.custom_voices.get_custom_voice_async.call_args.kwargs
+        )
+        assert call_kwargs["voice_id"] == "cv_xyz"
+
+    @pytest.mark.asyncio
+    async def test_omits_description_when_none(self, cv_crud_client):
+        """`description` is NotRequired in CustomVoiceDict; omit when None."""
+        resp = _make_get_custom_voice_response(description=None)
+        cv_crud_client._sdk.custom_voices.get_custom_voice_async = AsyncMock(
+            return_value=resp
+        )
+
+        result = await cv_crud_client.get_custom_voice(voice_id="cv_abc123")
+
+        assert result["voice_id"] == "cv_abc123"
+        assert result["name"] == "MyVoice"
+        assert "description" not in result
+
+    # --- RL-002: symmetric error-branch coverage ---
+
+    @pytest.mark.asyncio
+    async def test_unauthorized_raises_auth_error(self, cv_crud_client):
+        cv_crud_client._sdk.custom_voices.get_custom_voice_async = AsyncMock(
+            side_effect=_sdk_error(UnauthorizedErrorResponse)
+        )
+        with pytest.raises(SupertoneAuthError):
+            await cv_crud_client.get_custom_voice(voice_id="cv_1")
+
+    @pytest.mark.asyncio
+    async def test_forbidden_raises_auth_error(self, cv_crud_client):
+        cv_crud_client._sdk.custom_voices.get_custom_voice_async = AsyncMock(
+            side_effect=_sdk_error(ForbiddenErrorResponse)
+        )
+        with pytest.raises(SupertoneAuthError):
+            await cv_crud_client.get_custom_voice(voice_id="cv_1")
+
+    @pytest.mark.asyncio
+    async def test_429_raises_rate_limit_error(self, cv_crud_client):
+        cv_crud_client._sdk.custom_voices.get_custom_voice_async = AsyncMock(
+            side_effect=_sdk_error(TooManyRequestsErrorResponse)
+        )
+        with pytest.raises(SupertoneRateLimitError):
+            await cv_crud_client.get_custom_voice(voice_id="cv_1")
+
+    @pytest.mark.asyncio
+    async def test_5xx_raises_server_error(self, cv_crud_client):
+        cv_crud_client._sdk.custom_voices.get_custom_voice_async = AsyncMock(
+            side_effect=_sdk_error(InternalServerErrorResponse)
+        )
+        with pytest.raises(SupertoneServerError):
+            await cv_crud_client.get_custom_voice(voice_id="cv_1")
+
+    @pytest.mark.asyncio
+    async def test_no_response_raises_connection_error(self, cv_crud_client):
+        """RL-002: symmetric coverage of NoResponseError."""
+        cv_crud_client._sdk.custom_voices.get_custom_voice_async = AsyncMock(
+            side_effect=NoResponseError("no response")
+        )
+        with pytest.raises(SupertoneConnectionError):
+            await cv_crud_client.get_custom_voice(voice_id="cv_1")
+
+    @pytest.mark.asyncio
+    async def test_connect_error_raises_connection_error(self, cv_crud_client):
+        """RL-002: symmetric coverage of httpx.ConnectError."""
+        cv_crud_client._sdk.custom_voices.get_custom_voice_async = AsyncMock(
+            side_effect=httpx.ConnectError("refused")
+        )
+        with pytest.raises(SupertoneConnectionError):
+            await cv_crud_client.get_custom_voice(voice_id="cv_1")
+
+    @pytest.mark.asyncio
+    async def test_timeout_raises_connection_error(self, cv_crud_client):
+        """RL-002: symmetric coverage of httpx.TimeoutException."""
+        cv_crud_client._sdk.custom_voices.get_custom_voice_async = AsyncMock(
+            side_effect=httpx.ReadTimeout("timeout")
+        )
+        with pytest.raises(SupertoneConnectionError):
+            await cv_crud_client.get_custom_voice(voice_id="cv_1")
+
+
 class TestModelMapResolution:
     """ISSUE-021: confirm the dynamically-built model maps resolve the 2 new
     SDK 0.2.3 models (`sona_speech_3t`, `supertonic_api_3`)."""
