@@ -92,6 +92,28 @@ class TestToolRegistration:
         schema = tool.parameters
         assert "model" in schema["properties"]
 
+    def test_text_to_speech_has_output_mode_and_autoplay_params(self):
+        """ISSUE-022: per-call output_mode + autoplay replace env vars."""
+        tool = mcp._tool_manager._tools["text_to_speech"]
+        properties = tool.parameters["properties"]
+        assert "output_mode" in properties
+        assert "autoplay" in properties
+
+    def test_text_to_speech_output_mode_and_autoplay_optional(self):
+        """ISSUE-022: both new params are optional (have defaults)."""
+        tool = mcp._tool_manager._tools["text_to_speech"]
+        required = tool.parameters.get("required", [])
+        assert "output_mode" not in required
+        assert "autoplay" not in required
+
+    def test_text_to_speech_description_documents_param_migration(self):
+        """ISSUE-022: docstring/description documents the env-var replacement
+        and that autoplay defaults to false."""
+        tool = mcp._tool_manager._tools["text_to_speech"]
+        desc = tool.description
+        assert "output_mode" in desc
+        assert "autoplay" in desc
+
     def test_search_voice_all_filters_optional(self):
         """search_voice must accept zero filters."""
         tool = mcp._tool_manager._tools["search_voice"]
@@ -257,21 +279,28 @@ class TestToolRegistration:
         assert "text" in schema.get("required", [])
 
     def test_predict_duration_optional_params_match_text_to_speech(self):
-        """AC #6: same optional parameter schema as text_to_speech.
+        """predict_duration mirrors the SYNTHESIS-INPUT params of text_to_speech.
 
         text_to_speech exposes (voice_id, language, output_format, model,
-        speed, pitch_shift, style) as optional. predict_duration must expose
-        the exact same set.
+        speed, pitch_shift, style) as optional synthesis inputs, plus the
+        output-handling params (output_mode, autoplay) added in ISSUE-022.
+        predict_duration produces no audio, so it intentionally excludes the
+        output-handling params but must match on every synthesis input.
         """
         tts_tool = mcp._tool_manager._tools["text_to_speech"]
         pd_tool = mcp._tool_manager._tools["predict_duration"]
         tts_props = set(tts_tool.parameters["properties"].keys())
         pd_props = set(pd_tool.parameters["properties"].keys())
-        # Every text_to_speech param must exist on predict_duration.
-        assert tts_props == pd_props, (
+        # ISSUE-022: output handling is synthesis-only; predict_duration omits it.
+        output_handling = {"output_mode", "autoplay"}
+        synthesis_inputs = tts_props - output_handling
+        assert synthesis_inputs == pd_props, (
             f"predict_duration schema mismatch with text_to_speech: "
-            f"missing={tts_props - pd_props}, extra={pd_props - tts_props}"
+            f"missing={synthesis_inputs - pd_props}, "
+            f"extra={pd_props - synthesis_inputs}"
         )
+        # The output-handling params must NOT appear on predict_duration.
+        assert output_handling.isdisjoint(pd_props)
 
     def test_predict_duration_optional_params_are_optional(self):
         """All non-text params are optional."""
