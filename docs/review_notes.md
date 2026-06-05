@@ -1,72 +1,84 @@
-# Review Notes — ISSUE-025 (PR #40)
+# Review Notes — ISSUE-026 (PR #42, get_custom_voice)
 
-Expose SDK 0.2.3 `include_phonemes` (bool, default False) and `normalized_text`
-(str | None, default None) on `text_to_speech`, threaded through
-`client.synthesize` / `synthesize_stream` to the SDK calls. Pass-through only.
+Add a `get_custom_voice(voice_id)` MCP tool returning the detail of a single
+custom (cloned) voice by wrapping `custom_voices.get_custom_voice_async`, with
+empty-`voice_id` validation. Senior review + security audit.
 
 ## Code Review
 
+No Critical / High / Medium findings. Clean, pattern-consistent addition of a
+single read-only inspection tool.
+
 Verified against all five acceptance criteria:
 
-- **AC #1 (include_phonemes=True forwarded):** `synthesize` /
-  `synthesize_stream` forward `include_phonemes` to `create_speech_async` /
-  `stream_speech_async`; `tools.text_to_speech` threads it on both the one-shot
-  and streaming paths. Covered by
-  `TestSynthesize::test_forwards_include_phonemes_true`,
-  `TestSynthesizeStream::test_forwards_phoneme_and_normalized_params`,
-  `TestTextToSpeechHandler::test_passes_phoneme_params_to_synthesize` and
-  `test_passes_phoneme_params_to_stream`. PASS.
-- **AC #2 (include_phonemes defaults False):** wrapper + handler defaults are
-  `False`, matching the SDK default. Covered by
-  `test_include_phonemes_defaults_false`,
-  `test_stream_phoneme_params_default`,
-  `test_phoneme_params_default_to_synthesize`. PASS.
-- **AC #3 (normalized_text forwarded):** forwarded as-is (incl. non-ASCII
-  "안녕하세요"). Covered by `test_forwards_normalized_text` and the tools/stream
-  passthrough tests. PASS.
-- **AC #4 (normalized_text defaults None):** wrapper + handler default `None`.
-  Covered by `test_normalized_text_defaults_none`,
-  `test_stream_phoneme_params_default`, `test_phoneme_params_default_to_synthesize`.
+- **AC #1 (detail includes voice_id, name, description):** client
+  `TestGetCustomVoice::test_returns_parsed_detail` + handler
+  `TestGetCustomVoiceHandler::test_happy_path_returns_formatted_detail`. PASS.
+- **AC #2 (empty/whitespace → `voice_id must not be empty.`, no API call):**
+  `test_empty_voice_id_returns_validation_error_without_api_call` and
+  `test_whitespace_voice_id_returns_validation_error_without_api_call`, both
+  asserting `MC.assert_not_called()`. PASS.
+- **AC #3 (auth error string):** `test_auth_error_returns_formatted_string`. PASS.
+- **AC #4 (connection error string):**
+  `test_connection_error_returns_formatted_string`. PASS.
+- **AC #5 (server registers get_custom_voice with required voice_id):**
+  `test_get_custom_voice_tool_exists` + `test_get_custom_voice_voice_id_is_required`.
   PASS.
-- **AC #5 (server schema + model-constraint doc):** server.py registers both
-  params with schema-visible `Field` descriptions; `include_phonemes` is boolean
-  with default false; `normalized_text` description states it applies only to
-  `sona_speech_2` / `sona_speech_2_flash`. Covered by
-  `test_text_to_speech_has_phoneme_params` and
-  `test_normalized_text_documents_model_constraint`. PASS.
 
 ### Correctness
-- SDK kwarg names verified against the installed SDK
-  (`.venv/.../supertone/text_to_speech.py`): both methods accept
-  `include_phonemes: Optional[bool] = False` and
-  `normalized_text: Optional[str] = None`. Wrapper defaults match SDK defaults,
-  so omitting the params reproduces prior behavior exactly.
-- No client-side rejection for `normalized_text` on non-sona_speech_2 models,
-  per spec (the SDK ignores it). Returned phoneme timing data is intentionally
-  NOT surfaced (pass-through only) — documented in all three docstrings + schema.
+- `SupertoneClient.get_custom_voice` mirrors the existing `edit_custom_voice` /
+  `search_custom_voices` mapping exactly: `voice_id` + `name` always set,
+  `description` added only when the SDK returns non-None (`getattr` + guard).
+  The `except` tuple is identical to every other wrapper.
+- **SDK shape verified** against the installed SDK
+  `models/getcustomvoiceresponse.py`: `GetCustomVoiceResponse` exposes only
+  `voice_id` (str), `name` (str), `description` (OptionalNullable[str]). There is
+  **no `created_at`** field. The issue spec's "optional created_at" was therefore
+  correctly NOT mapped — inventing it would violate "truthful to source data"
+  (same decision already documented for `format_custom_voice_list`). This is the
+  one place where implementation deliberately diverges from the literal AC wording,
+  and the divergence is correct.
+- Handler reuses the EXACT existing `voice_id must not be empty.` string and the
+  `get_voice` error-handling shape (auth/rate/5xx/connection), with `aclose()` in
+  `finally`.
+- `format_custom_voice_detail` reuses the `format_custom_voice_list` field style
+  (`Voice ID` / `Name` / `Description`), `description or "-"` placeholder.
 
 ### Edge cases / regressions
-- No new validation surfaces and no new error branches; existing
-  `_handle_sdk_errors` chain unaffected. `predict_duration` deliberately does
-  NOT gain these audio-only params; the parity test was updated with a documented
-  rationale (predict_duration produces no audio).
+- Empty + whitespace voice_id both rejected before any client construction.
+- No new validation surfaces beyond the empty guard; existing `_handle_sdk_errors`
+  chain unaffected; no other handlers/tools touched.
 
 ## Security Findings
-None. No secrets, no injection surface (params passed as typed SDK kwargs, not
-interpolated), no new filesystem/shell/network behavior.
+None. No hardcoded secrets (API key from `SUPERTONE_API_KEY` env); no injection
+surface (`voice_id` passed as a typed SDK kwarg / path param, not interpolated);
+input validated; no new dependencies.
 
 ## review_lessons.md cross-check
-- RL-001 / RL-005 (TypedDict nullability): N/A — no new TypedDict.
-- RL-002 / RL-003 (error-branch / pagination test symmetry): N/A — no new
-  wrapped SDK methods; only new kwargs on existing `synthesize` /
-  `synthesize_stream`, whose existing error-branch tests still apply.
-- RL-004 (`NoReturn`) and RL-006 (404 mapping): pre-existing tracked tech-debt,
-  not touched or worsened by this change.
+- **RL-001 (TypedDict nullability):** Reuses existing `CustomVoiceDict`
+  (`description = NotRequired`); no new `total=False` TypedDict. PASS.
+- **RL-002 (symmetric error branches):** Full matrix tested — 401, 403, 429, 5xx,
+  NoResponseError, httpx.ConnectError, httpx.TimeoutException. PASS.
+- **RL-003 (pagination):** N/A — single-object fetch, no pagination loop.
+- **RL-004 (`NoReturn` on `_handle_sdk_errors`):** pre-existing repo-wide tech-debt,
+  unchanged by this PR.
+- **RL-006 (404 mapping gap):** `get_custom_voice` does not surface a "custom voice
+  not found" string for a real 404, identical to existing `get_voice` /
+  `edit_custom_voice` / `delete_custom_voice`. Deliberate consistency choice; the
+  gap is an already-open repo-wide pattern in RL-006. NOT a new regression.
 
 ## Test Quality
-All 11 added tests contain real assertions; no hollow tests. Each AC maps to at
-least one test. `uv run pytest` → 467 passed; `uv run ruff check` → clean.
+All 28 added tests (client 11, handler 11, formatter 3, server 4 — including
+import-fix) contain real assertions; no hollow tests. Each AC maps to at least
+one test.
+
+## Verification
+- `uv run pytest` → 495 passed (28 new over prior 467).
+- `uv run ruff check` → clean; `ruff format --check` → clean.
+- Checkpoint `test` / `smoke` bare `python3 -m pytest` hits the known
+  pre-existing pyenv-3.10 + pytest-asyncio collection INTERNALERROR
+  (false-negative); `uv run pytest` + CI (3.12/3.13) are authoritative.
 
 ## Severity Summary
 No Critical/High/Medium findings. No follow-up issues required.
-Confidence: High.
+`review_lessons.md` unchanged (no new preventable pattern). Confidence: High.

@@ -1290,3 +1290,60 @@ async def delete_custom_voice(voice_id: str) -> str:
         await client.aclose()
 
     return f"Custom voice deleted. voice_id: {voice_id}."
+
+
+# --- get_custom_voice (ISSUE-026) ---
+
+
+def format_custom_voice_detail(detail: CustomVoiceDict) -> str:
+    """Format a single `CustomVoiceDict` as a multi-line plain-text response.
+
+    Mirrors the field style of `format_custom_voice_list` (one entry):
+    `Voice ID`, `Name`, and `Description`. Description renders as "-" when
+    missing/empty per the placeholder convention used elsewhere
+    (`format_voice_detail`, `format_custom_voice_list`). The SDK custom-voice
+    schema exposes only voice_id, name, and a nullable description (no
+    created_at), so no other fields are rendered.
+    """
+    description = detail.get("description") or "-"
+    lines = [
+        f"Voice ID: {detail['voice_id']}",
+        f"Name: {detail['name']}",
+        f"Description: {description}",
+    ]
+    return "\n".join(lines)
+
+
+async def get_custom_voice(voice_id: str) -> str:
+    """Return formatted detail for a single custom (cloned) voice by ID.
+
+    Validates that `voice_id` is a non-empty (post-strip) string before
+    issuing any API call (mirrors `get_voice`). Errors from the SDK are
+    mapped to the same plain-text strings used elsewhere in this module.
+    """
+    # Fail-fast input validation — no API call when voice_id is empty/whitespace.
+    if not isinstance(voice_id, str) or not voice_id.strip():
+        return "voice_id must not be empty."
+
+    try:
+        api_key = resolve_api_key()
+    except ValueError as e:
+        return str(e)
+
+    client = SupertoneClient(api_key=api_key)
+    try:
+        detail = await client.get_custom_voice(voice_id=voice_id)
+    except SupertoneAuthError:
+        return "Authentication failed. Please verify your SUPERTONE_API_KEY."
+    except SupertoneRateLimitError:
+        return "Rate limit exceeded. Please wait and try again."
+    except SupertoneServerError as e:
+        return f"Supertone API server error ({e.status_code}). Please try again later."
+    except SupertoneConnectionError:
+        return (
+            "Failed to connect to Supertone API. Please check your network connection."
+        )
+    finally:
+        await client.aclose()
+
+    return format_custom_voice_detail(detail)

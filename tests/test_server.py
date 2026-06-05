@@ -521,6 +521,30 @@ class TestToolRegistration:
         schema = tool.parameters
         assert "voice_id" in schema["properties"]
 
+    # --- ISSUE-026: get_custom_voice ---
+
+    def test_get_custom_voice_tool_exists(self):
+        """ISSUE-026 AC #5: get_custom_voice is registered."""
+        tools = mcp._tool_manager._tools
+        assert "get_custom_voice" in tools
+
+    def test_get_custom_voice_description_mentions_custom(self):
+        tool = mcp._tool_manager._tools["get_custom_voice"]
+        desc = tool.description
+        assert "custom" in desc.lower()
+        assert "voice_id" in desc
+
+    def test_get_custom_voice_has_voice_id_parameter(self):
+        tool = mcp._tool_manager._tools["get_custom_voice"]
+        schema = tool.parameters
+        assert "voice_id" in schema["properties"]
+
+    def test_get_custom_voice_voice_id_is_required(self):
+        """ISSUE-026 AC #5: voice_id is a required param."""
+        tool = mcp._tool_manager._tools["get_custom_voice"]
+        schema = tool.parameters
+        assert "voice_id" in schema.get("required", [])
+
 
 class TestMainFunction:
     def test_main_is_callable(self):

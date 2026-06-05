@@ -395,6 +395,24 @@ async def delete_custom_voice(voice_id: str) -> str:
     return await tools.delete_custom_voice(voice_id=voice_id)
 
 
+@mcp.tool(
+    name="get_custom_voice",
+    description=(
+        "Fetch the detail of a single custom (cloned) voice by voice_id. "
+        "Returns the voice's name and description. "
+        "Use search_custom_voice to list custom voices and find a voice_id."
+    ),
+)
+async def get_custom_voice(voice_id: str) -> str:
+    """Fetch the detail of a single custom (cloned) voice by voice_id.
+
+    Args:
+        voice_id: Custom voice identifier returned by search_custom_voice.
+            Required.
+    """
+    return await tools.get_custom_voice(voice_id=voice_id)
+
+
 def main() -> None:
     """Start the Supertone TTS MCP server."""
     mcp.run(transport="stdio")
