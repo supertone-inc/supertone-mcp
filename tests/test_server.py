@@ -53,7 +53,7 @@ class TestToolRegistration:
         # text_to_speech description should refer to search_voice (not list_voices)
         assert "search_voice" in desc
         assert "list_voices" not in desc
-        assert "23 languages" in desc
+        assert "31 languages" in desc
 
     def test_search_voice_description_matches_ux_spec(self):
         """Description must follow docs/ux_spec.md §2.3 wording."""

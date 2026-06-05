@@ -62,6 +62,14 @@ SUPPORTED_LANGUAGES: list[str] = [
     "ru",
     "vi",
     "ar",
+    "hr",
+    "lt",
+    "lv",
+    "sk",
+    "sl",
+    "sv",
+    "tr",
+    "uk",
 ]
 SUPPORTED_FORMATS: list[str] = ["mp3", "wav"]
 SUPPORTED_MODELS: list[str] = [
