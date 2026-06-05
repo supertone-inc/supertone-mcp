@@ -64,3 +64,69 @@ No Critical / High severity findings.
 ## Recommendation
 
 **APPROVE.** Ship.
+
+---
+
+# Review Notes: ISSUE-021 (PR #32)
+
+SDK 0.2.3 sync: model enum + default + version pin. Reviewed by team-lead
+(reviewer role) against PR #32 on branch `issue/ISSUE-021-sdk-023-sync`.
+
+## Code Review
+
+### Correctness
+- `SUPPORTED_MODELS` and the `Model` Literal now list exactly the 7 SDK 0.2.3
+  models in the same order as the installed `supertone==0.2.3`
+  `APIConvertTextToSpeechUsingCharacterRequestModel` enum:
+  sona_speech_1, sona_speech_2, sona_speech_2_flash, sona_speech_2t,
+  sona_speech_3t, supertonic_api_1, supertonic_api_3. Matches AC exactly. PASS.
+- `DEFAULT_MODEL = "sona_speech_2_flash"`. Matches AC. PASS.
+- `validate_model` error-string format is unchanged
+  (`Invalid model: "{model}". Supported models: {comma-joined}.`) and now
+  emits the full 7-model list because it joins `SUPPORTED_MODELS`. Consistent
+  with sibling validators. The AC's expected string is matched by the new
+  exact-message test. PASS.
+- `pyproject.toml` pins `supertone>=0.2.3,<0.3` (was bare `supertone`). PASS.
+- `_MODEL_MAP` / `_PREDICT_MODEL_MAP` are built dynamically from the SDK enums,
+  so both already resolve the 2 new models with no source change. Verified by
+  new `TestModelMapResolution` tests + a synthesize-path enum-passing test. PASS.
+- `server.py` `text_to_speech` docstring no longer states
+  "sona_speech_1 (default, streaming)"; it lists all 7 models with
+  sona_speech_2_flash as default and preserves the sona_speech_1 streaming
+  caveat (routing deferred to ISSUE-023). PASS.
+
+### Findings
+- [Medium] `server.py` `predict_duration` docstring previously read
+  `model: TTS model identifier (default: "sona_speech_1")`. Because
+  `predict_duration` resolves its default from `DEFAULT_MODEL`, the actual
+  default silently became `sona_speech_2_flash` with this change, leaving the
+  docstring factually stale. **FIXED in review**: updated to
+  `(default: "sona_speech_2_flash")`. Functional behavior was already correct
+  (always used `DEFAULT_MODEL`); documentation-accuracy fix only.
+- [Info] Remaining `sona_speech_1` references in `server.py` (search_voice /
+  preview_voice arg examples) and `tools.py` (`format_voice_samples` docstring
+  example) are illustrative `e.g.` examples for unrelated tools and remain
+  valid. No change needed.
+
+### Test Coverage (vs AC)
+All 8 ACs covered by real-assertion tests; no hollow tests. See
+`TestValidateModel`, `TestModelConstants`, `TestTextToSpeechHandler`
+(test_tools.py), `TestModelMapResolution` (test_supertone_client.py), and the
+updated `TestConstants` (test_models.py). pyproject pin and docstring ACs
+verified manually in the diff. Full suite: 453 passed under `uv run pytest`.
+
+### Review Lessons applicability
+- RL-001/002/003/005/006: N/A — no TypedDict, no new client methods, no
+  pagination loops, no new inspection handlers.
+- RL-004 (`_handle_sdk_errors -> NoReturn`): pre-existing tech-debt, not touched
+  by this PR; out of scope. Still tracked separately. No new occurrences (no
+  new wrapped SDK methods).
+
+## Security Findings
+No new external input surfaces, secrets, auth changes, or new dependencies.
+Tightening `supertone` to `>=0.2.3,<0.3` is security-positive (prevents an
+unvetted future 0.3.x from being silently pulled in). No findings.
+
+## Summary
+No Critical or High severity findings. One Medium documentation-accuracy issue
+found and fixed in-review. Confidence: High. **APPROVE.** Ship.

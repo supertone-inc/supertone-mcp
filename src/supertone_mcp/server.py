@@ -208,7 +208,7 @@ async def predict_duration(
         language: Language code (e.g., "ko" default, "en", "ja").
         output_format: Audio format the estimate corresponds to: "wav"
             (default; matches the SDK default) or "mp3".
-        model: TTS model identifier (default: "sona_speech_1").
+        model: TTS model identifier (default: "sona_speech_2_flash").
         speed: Speech speed. 0.5 (slow) to 2.0 (fast). Default: 1.0.
         pitch_shift: Pitch adjustment in semitones. -24 to +24. Default: 0.
         style: Emotion or tone of the voice (optional, voice-dependent).
