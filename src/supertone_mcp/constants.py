@@ -33,7 +33,9 @@ Model = Literal[
     "sona_speech_2",
     "sona_speech_2_flash",
     "sona_speech_2t",
+    "sona_speech_3t",
     "supertonic_api_1",
+    "supertonic_api_3",
 ]
 
 SUPPORTED_LANGUAGES: list[str] = [
@@ -67,7 +69,9 @@ SUPPORTED_MODELS: list[str] = [
     "sona_speech_2",
     "sona_speech_2_flash",
     "sona_speech_2t",
+    "sona_speech_3t",
     "supertonic_api_1",
+    "supertonic_api_3",
 ]
 
 SPEED_MIN: float = 0.5
@@ -78,7 +82,7 @@ TEXT_MAX_LENGTH: int = 300
 
 DEFAULT_LANGUAGE: str = "ko"
 DEFAULT_FORMAT: str = "mp3"
-DEFAULT_MODEL: str = "sona_speech_1"
+DEFAULT_MODEL: str = "sona_speech_2_flash"
 DEFAULT_SPEED: float = 1.0
 DEFAULT_PITCH_SHIFT: int = 0
 DEFAULT_VOICE_ID: str = (

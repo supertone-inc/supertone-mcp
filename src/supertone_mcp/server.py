@@ -45,9 +45,10 @@ async def text_to_speech(
             and 20+ more. Must match the text language for best results.
         output_format: Audio file format: "mp3" (default) or "wav".
             Use "wav" for higher quality, "mp3" for smaller files.
-        model: TTS model: "sona_speech_1" (default, streaming),
-            "sona_speech_2", "sona_speech_2_flash" (fastest),
-            "sona_speech_2t", "supertonic_api_1".
+        model: TTS model. One of "sona_speech_1", "sona_speech_2",
+            "sona_speech_2_flash" (default, fastest), "sona_speech_2t",
+            "sona_speech_3t", "supertonic_api_1", "supertonic_api_3".
+            Note: only "sona_speech_1" supports streaming output.
         speed: Speech speed. 0.5 (slow) to 2.0 (fast). Default: 1.0.
         pitch_shift: Voice pitch adjustment in semitones.
             -24 (deeper) to +24 (higher). Default: 0.
