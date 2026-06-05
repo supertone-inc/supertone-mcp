@@ -19,6 +19,9 @@ mcp = FastMCP("supertone-tts")
         "generate voice audio, preview how text sounds when spoken, "
         "or convert any writing into spoken audio. "
         "Supports 23 languages including Korean, English, and Japanese. "
+        "There is no text-length limit: long text is automatically split "
+        "(auto-chunked) by the service, and credit usage and latency scale "
+        "with the length of the text. "
         "Set output_mode ('files', 'resources', or 'both') to control how audio "
         "is returned, and autoplay=true to play it back on macOS. These per-call "
         "parameters REPLACE the removed SUPERTONE_MCP_OUTPUT_MODE and "
@@ -218,8 +221,9 @@ async def preview_voice(
     description=(
         "Predict the expected output audio duration in seconds for a given "
         "text WITHOUT producing any audio file. "
-        "Accepts the same parameters as text_to_speech and applies the "
-        "same 300-character limit. "
+        "Accepts the same parameters as text_to_speech. There is no "
+        "text-length limit: long text is automatically split (auto-chunked), "
+        "and credit usage and latency scale with the length of the text. "
         "Use this to estimate credit cost before synthesizing — "
         "credit usage is proportional to the predicted duration."
     ),
@@ -238,7 +242,8 @@ async def predict_duration(
 
     Args:
         text: The text to estimate duration for. Required.
-            Maximum 300 characters (no auto-chunking, unlike text_to_speech).
+            No length limit — long text is automatically split (auto-chunked),
+            and credit usage/latency scale with the length of the text.
         voice_id: Voice to estimate for. If omitted, the configured default
             voice is used (same env-var resolution as text_to_speech).
         language: Language code (e.g., "ko" default, "en", "ja").

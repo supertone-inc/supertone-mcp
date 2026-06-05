@@ -32,7 +32,6 @@ from supertone_mcp.constants import (
     SUPPORTED_FORMATS,
     SUPPORTED_LANGUAGES,
     SUPPORTED_MODELS,
-    TEXT_MAX_LENGTH,
     VALID_OUTPUT_MODES,
 )
 from supertone_mcp.exceptions import (
@@ -64,25 +63,15 @@ def _format_int_with_commas(value: int | float) -> str:
 
 
 def validate_text(text: str) -> None:
-    """Validate text input for TTS."""
+    """Validate text input for TTS.
+
+    Only the empty-text guard remains (ISSUE-024). The former 300-character
+    hard cap (`validate_text_max_length`) was removed — long text is now
+    delegated to the SDK's internal auto-chunking for both `text_to_speech`
+    and `predict_duration`, and credit/latency scale with text length.
+    """
     if not text:
         raise ValueError("Text must not be empty.")
-
-
-def validate_text_max_length(text: str) -> None:
-    """Validate text against the 300-character SDK limit.
-
-    Used by handlers (e.g., `predict_duration`) where the SDK does NOT
-    auto-chunk long inputs and a >300-char payload would be rejected by
-    the API. The `text_to_speech` handler intentionally skips this check
-    because the synthesize SDK splits chunks transparently.
-    """
-    n = len(text)
-    if n > TEXT_MAX_LENGTH:
-        raise ValueError(
-            f"Text exceeds the maximum length of {TEXT_MAX_LENGTH} characters "
-            f"(received: {n}). Please shorten or split the text manually."
-        )
 
 
 def validate_language(language: str) -> None:
@@ -979,10 +968,12 @@ async def predict_duration(
 ) -> str:
     """Predict the output audio length for a TTS request WITHOUT synthesizing.
 
-    Mirrors the parameter surface of `text_to_speech`, runs the same
-    client-side validation (with the addition of the 300-character text
-    cap — predict_duration does not chunk), and maps SDK errors to the
-    same plain-text strings used elsewhere in this module.
+    Mirrors the parameter surface of `text_to_speech` and runs the same
+    client-side validation. As of ISSUE-024 there is NO 300-character hard
+    cap: long text is delegated to the SDK's internal auto-chunking (only the
+    empty-text guard remains), and credit/latency scale with text length. SDK
+    errors are mapped to the same plain-text strings used elsewhere in this
+    module.
 
     Returns the formatted single-line response per UX spec §4.7.
     """
@@ -999,7 +990,6 @@ async def predict_duration(
     try:
         api_key = resolve_api_key()
         validate_text(text)
-        validate_text_max_length(text)
         validate_language(language)
         validate_output_format(output_format)
         validate_model(model)
