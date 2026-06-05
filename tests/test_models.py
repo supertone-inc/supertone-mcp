@@ -218,3 +218,45 @@ class TestExceptions:
 
     def test_connection_error_is_supertone_error(self):
         assert isinstance(SupertoneConnectionError(), SupertoneError)
+
+
+class TestUsageTypedDicts:
+    """ISSUE-027: usage-history / voice-usage TypedDicts (RL-001)."""
+
+    def test_usage_result_dict_importable(self):
+        from supertone_mcp.models import UsageResultDict
+
+        r: UsageResultDict = {"minutes_used": 12.5}
+        assert r["minutes_used"] == 12.5
+
+    def test_usage_bucket_dict_importable(self):
+        from supertone_mcp.models import UsageBucketDict
+
+        b: UsageBucketDict = {
+            "starting_at": "2026-05-01T00:00:00Z",
+            "ending_at": "2026-05-02T00:00:00Z",
+            "results": [],
+        }
+        assert b["starting_at"].endswith("Z")
+        assert b["results"] == []
+
+    def test_usage_history_dict_importable(self):
+        from supertone_mcp.models import UsageHistoryDict
+
+        h: UsageHistoryDict = {"total": 0.0, "buckets": []}
+        assert h["total"] == 0.0
+        assert h["buckets"] == []
+
+    def test_voice_usage_record_dict_importable(self):
+        from supertone_mcp.models import VoiceUsageRecordDict
+
+        rec: VoiceUsageRecordDict = {"date": "2026-05-01", "total_minutes_used": 4.0}
+        assert rec["date"] == "2026-05-01"
+        assert rec["total_minutes_used"] == 4.0
+
+    def test_voice_usage_dict_importable(self):
+        from supertone_mcp.models import VoiceUsageDict
+
+        v: VoiceUsageDict = {"voice_id": "v1", "records": []}
+        assert v["voice_id"] == "v1"
+        assert v["records"] == []

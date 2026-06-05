@@ -413,6 +413,39 @@ async def get_custom_voice(voice_id: str) -> str:
     return await tools.get_custom_voice(voice_id=voice_id)
 
 
+@mcp.tool(
+    name="get_usage_history",
+    description=(
+        "Retrieve recent TTS API usage history for the current API key. "
+        "Returns a plain-text summary broken down by time period, showing the "
+        "minutes used (and, when available, the voice and model) in each "
+        "period. Takes no parameters — it reports usage over a recent default "
+        "window. Use this to review how much synthesis has been consumed."
+    ),
+)
+async def get_usage_history() -> str:
+    """Retrieve recent TTS API usage history for the current API key."""
+    return await tools.get_usage_history()
+
+
+@mcp.tool(
+    name="get_voice_usage",
+    description=(
+        "Retrieve recent usage for a single voice by voice_id. "
+        "Returns a plain-text summary of the voice's per-day minutes used over "
+        "a recent default window. Use search_voice or search_custom_voice to "
+        "find a voice_id."
+    ),
+)
+async def get_voice_usage(voice_id: str) -> str:
+    """Retrieve recent usage for a single voice by voice_id.
+
+    Args:
+        voice_id: The voice identifier to report usage for. Required.
+    """
+    return await tools.get_voice_usage(voice_id=voice_id)
+
+
 def main() -> None:
     """Start the Supertone TTS MCP server."""
     mcp.run(transport="stdio")

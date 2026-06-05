@@ -2117,3 +2117,404 @@ class TestModelMapResolution:
 
         call_kwargs = client._sdk.text_to_speech.create_speech_async.call_args[1]
         assert call_kwargs["model"].value == model
+
+
+# ---------------------------------------------------------------------------
+# ISSUE-027: usage-history / voice-usage SDK wrappers
+# ---------------------------------------------------------------------------
+
+
+def _make_usage_result(
+    minutes_used: float,
+    voice_id: str | None = None,
+    voice_name: str | None = None,
+    model: str | None = None,
+):
+    """Build a mock supertone UsageResult."""
+    mock = MagicMock()
+    mock.minutes_used = minutes_used
+    mock.voice_id = voice_id
+    mock.voice_name = voice_name
+    mock.api_key = None
+    mock.model = model
+    return mock
+
+
+def _make_usage_bucket(starting_at: str, ending_at: str, results: list):
+    """Build a mock supertone UsageBucket."""
+    mock = MagicMock()
+    mock.starting_at = starting_at
+    mock.ending_at = ending_at
+    mock.results = results
+    return mock
+
+
+def _make_usage_analytics_response(buckets: list, total: float, next_page_token=None):
+    """Build a mock supertone UsageAnalyticsResponse."""
+    mock = MagicMock()
+    mock.data = buckets
+    mock.total = total
+    mock.next_page_token = next_page_token
+    return mock
+
+
+def _make_usage_record(
+    date: str,
+    voice_id: str,
+    total_minutes_used: float,
+    name: str | None = None,
+    style: str | None = None,
+    language: str | None = None,
+    model: str | None = None,
+):
+    """Build a mock supertone GetUsageResponseV1Data (per-voice/day record)."""
+    mock = MagicMock()
+    mock.date_ = date
+    mock.voice_id = voice_id
+    mock.total_minutes_used = total_minutes_used
+    mock.name = name
+    mock.style = style
+    mock.language = language
+    mock.model = model
+    mock.thumbnail_url = None
+    return mock
+
+
+def _make_voice_usage_list_response(usages: list):
+    """Build a mock supertone GetUsageListV1Response."""
+    mock = MagicMock()
+    mock.usages = usages
+    return mock
+
+
+class TestGetUsageHistory:
+    """SupertoneClient.get_usage_history wraps usage.get_usage_async."""
+
+    @pytest.mark.asyncio
+    async def test_returns_parsed_buckets(self, client):
+        bucket = _make_usage_bucket(
+            starting_at="2026-05-01T00:00:00Z",
+            ending_at="2026-05-02T00:00:00Z",
+            results=[
+                _make_usage_result(
+                    minutes_used=12.5,
+                    voice_id="v1",
+                    voice_name="Alice",
+                    model="sona_speech_2",
+                ),
+            ],
+        )
+        resp = _make_usage_analytics_response(buckets=[bucket], total=1.0)
+        client._sdk.usage.get_usage_async = AsyncMock(return_value=resp)
+
+        result = await client.get_usage_history(
+            start_time="2026-05-01T00:00:00Z",
+            end_time="2026-05-08T00:00:00Z",
+        )
+
+        assert result["total"] == 1.0
+        assert len(result["buckets"]) == 1
+        b = result["buckets"][0]
+        assert b["starting_at"] == "2026-05-01T00:00:00Z"
+        assert b["ending_at"] == "2026-05-02T00:00:00Z"
+        assert len(b["results"]) == 1
+        r = b["results"][0]
+        assert r["minutes_used"] == 12.5
+        assert r["voice_id"] == "v1"
+        assert r["voice_name"] == "Alice"
+        assert r["model"] == "sona_speech_2"
+
+    @pytest.mark.asyncio
+    async def test_omits_optional_result_fields_when_none(self, client):
+        bucket = _make_usage_bucket(
+            starting_at="2026-05-01T00:00:00Z",
+            ending_at="2026-05-02T00:00:00Z",
+            results=[_make_usage_result(minutes_used=3.0)],
+        )
+        resp = _make_usage_analytics_response(buckets=[bucket], total=1.0)
+        client._sdk.usage.get_usage_async = AsyncMock(return_value=resp)
+
+        result = await client.get_usage_history(
+            start_time="2026-05-01T00:00:00Z",
+            end_time="2026-05-08T00:00:00Z",
+        )
+
+        r = result["buckets"][0]["results"][0]
+        assert r["minutes_used"] == 3.0
+        assert "voice_id" not in r
+        assert "voice_name" not in r
+        assert "model" not in r
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_buckets(self, client):
+        resp = _make_usage_analytics_response(buckets=[], total=0.0)
+        client._sdk.usage.get_usage_async = AsyncMock(return_value=resp)
+
+        result = await client.get_usage_history(
+            start_time="2026-05-01T00:00:00Z",
+            end_time="2026-05-08T00:00:00Z",
+        )
+
+        assert result["total"] == 0.0
+        assert result["buckets"] == []
+
+    @pytest.mark.asyncio
+    async def test_passes_optional_params_through(self, client):
+        resp = _make_usage_analytics_response(buckets=[], total=0.0)
+        client._sdk.usage.get_usage_async = AsyncMock(return_value=resp)
+
+        await client.get_usage_history(
+            start_time="2026-05-01T00:00:00Z",
+            end_time="2026-05-08T00:00:00Z",
+            page_size=25,
+            next_page_token="tok",
+        )
+
+        kwargs = client._sdk.usage.get_usage_async.call_args.kwargs
+        assert kwargs["start_time"] == "2026-05-01T00:00:00Z"
+        assert kwargs["end_time"] == "2026-05-08T00:00:00Z"
+        assert kwargs["page_size"] == 25
+        assert kwargs["next_page_token"] == "tok"
+
+    @pytest.mark.asyncio
+    async def test_unauthorized_raises_auth_error(self, client):
+        client._sdk.usage.get_usage_async = AsyncMock(
+            side_effect=_sdk_error(UnauthorizedErrorResponse)
+        )
+        with pytest.raises(SupertoneAuthError):
+            await client.get_usage_history(
+                start_time="2026-05-01T00:00:00Z",
+                end_time="2026-05-08T00:00:00Z",
+            )
+
+    @pytest.mark.asyncio
+    async def test_forbidden_raises_auth_error(self, client):
+        client._sdk.usage.get_usage_async = AsyncMock(
+            side_effect=_sdk_error(ForbiddenErrorResponse)
+        )
+        with pytest.raises(SupertoneAuthError):
+            await client.get_usage_history(
+                start_time="2026-05-01T00:00:00Z",
+                end_time="2026-05-08T00:00:00Z",
+            )
+
+    @pytest.mark.asyncio
+    async def test_429_raises_rate_limit_error(self, client):
+        client._sdk.usage.get_usage_async = AsyncMock(
+            side_effect=_sdk_error(TooManyRequestsErrorResponse)
+        )
+        with pytest.raises(SupertoneRateLimitError):
+            await client.get_usage_history(
+                start_time="2026-05-01T00:00:00Z",
+                end_time="2026-05-08T00:00:00Z",
+            )
+
+    @pytest.mark.asyncio
+    async def test_5xx_raises_server_error(self, client):
+        client._sdk.usage.get_usage_async = AsyncMock(
+            side_effect=_sdk_error(InternalServerErrorResponse)
+        )
+        with pytest.raises(SupertoneServerError):
+            await client.get_usage_history(
+                start_time="2026-05-01T00:00:00Z",
+                end_time="2026-05-08T00:00:00Z",
+            )
+
+    @pytest.mark.asyncio
+    async def test_no_response_raises_connection_error(self, client):
+        client._sdk.usage.get_usage_async = AsyncMock(
+            side_effect=NoResponseError("no response")
+        )
+        with pytest.raises(SupertoneConnectionError):
+            await client.get_usage_history(
+                start_time="2026-05-01T00:00:00Z",
+                end_time="2026-05-08T00:00:00Z",
+            )
+
+    @pytest.mark.asyncio
+    async def test_connect_error_raises_connection_error(self, client):
+        client._sdk.usage.get_usage_async = AsyncMock(
+            side_effect=httpx.ConnectError("refused")
+        )
+        with pytest.raises(SupertoneConnectionError):
+            await client.get_usage_history(
+                start_time="2026-05-01T00:00:00Z",
+                end_time="2026-05-08T00:00:00Z",
+            )
+
+    @pytest.mark.asyncio
+    async def test_timeout_raises_connection_error(self, client):
+        client._sdk.usage.get_usage_async = AsyncMock(
+            side_effect=httpx.TimeoutException("timeout")
+        )
+        with pytest.raises(SupertoneConnectionError):
+            await client.get_usage_history(
+                start_time="2026-05-01T00:00:00Z",
+                end_time="2026-05-08T00:00:00Z",
+            )
+
+
+class TestGetVoiceUsage:
+    """SupertoneClient.get_voice_usage wraps usage.get_voice_usage_async.
+
+    The SDK endpoint has NO voice_id parameter; it returns a date-range list of
+    per-voice/day records. The wrapper filters those records by voice_id.
+    """
+
+    @pytest.mark.asyncio
+    async def test_filters_records_by_voice_id(self, client):
+        usages = [
+            _make_usage_record(
+                date="2026-05-01",
+                voice_id="v1",
+                total_minutes_used=4.0,
+                name="Alice",
+                model="sona_speech_2",
+            ),
+            _make_usage_record(
+                date="2026-05-02",
+                voice_id="v2",
+                total_minutes_used=9.0,
+                name="Bob",
+            ),
+            _make_usage_record(
+                date="2026-05-03",
+                voice_id="v1",
+                total_minutes_used=2.5,
+                name="Alice",
+            ),
+        ]
+        resp = _make_voice_usage_list_response(usages)
+        client._sdk.usage.get_voice_usage_async = AsyncMock(return_value=resp)
+
+        result = await client.get_voice_usage(
+            voice_id="v1",
+            start_date="2026-05-01",
+            end_date="2026-05-08",
+        )
+
+        assert result["voice_id"] == "v1"
+        assert len(result["records"]) == 2
+        assert result["records"][0]["date"] == "2026-05-01"
+        assert result["records"][0]["total_minutes_used"] == 4.0
+        assert result["records"][0]["name"] == "Alice"
+        assert result["records"][0]["model"] == "sona_speech_2"
+        assert result["records"][1]["date"] == "2026-05-03"
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_records_when_no_match(self, client):
+        usages = [
+            _make_usage_record(
+                date="2026-05-01", voice_id="other", total_minutes_used=4.0
+            ),
+        ]
+        resp = _make_voice_usage_list_response(usages)
+        client._sdk.usage.get_voice_usage_async = AsyncMock(return_value=resp)
+
+        result = await client.get_voice_usage(
+            voice_id="v1",
+            start_date="2026-05-01",
+            end_date="2026-05-08",
+        )
+
+        assert result["voice_id"] == "v1"
+        assert result["records"] == []
+
+    @pytest.mark.asyncio
+    async def test_passes_date_range_to_sdk(self, client):
+        resp = _make_voice_usage_list_response([])
+        client._sdk.usage.get_voice_usage_async = AsyncMock(return_value=resp)
+
+        await client.get_voice_usage(
+            voice_id="v1",
+            start_date="2026-05-01",
+            end_date="2026-05-08",
+        )
+
+        kwargs = client._sdk.usage.get_voice_usage_async.call_args.kwargs
+        assert kwargs["start_date"] == "2026-05-01"
+        assert kwargs["end_date"] == "2026-05-08"
+
+    @pytest.mark.asyncio
+    async def test_unauthorized_raises_auth_error(self, client):
+        client._sdk.usage.get_voice_usage_async = AsyncMock(
+            side_effect=_sdk_error(UnauthorizedErrorResponse)
+        )
+        with pytest.raises(SupertoneAuthError):
+            await client.get_voice_usage(
+                voice_id="v1",
+                start_date="2026-05-01",
+                end_date="2026-05-08",
+            )
+
+    @pytest.mark.asyncio
+    async def test_forbidden_raises_auth_error(self, client):
+        client._sdk.usage.get_voice_usage_async = AsyncMock(
+            side_effect=_sdk_error(ForbiddenErrorResponse)
+        )
+        with pytest.raises(SupertoneAuthError):
+            await client.get_voice_usage(
+                voice_id="v1",
+                start_date="2026-05-01",
+                end_date="2026-05-08",
+            )
+
+    @pytest.mark.asyncio
+    async def test_429_raises_rate_limit_error(self, client):
+        client._sdk.usage.get_voice_usage_async = AsyncMock(
+            side_effect=_sdk_error(TooManyRequestsErrorResponse)
+        )
+        with pytest.raises(SupertoneRateLimitError):
+            await client.get_voice_usage(
+                voice_id="v1",
+                start_date="2026-05-01",
+                end_date="2026-05-08",
+            )
+
+    @pytest.mark.asyncio
+    async def test_5xx_raises_server_error(self, client):
+        client._sdk.usage.get_voice_usage_async = AsyncMock(
+            side_effect=_sdk_error(InternalServerErrorResponse)
+        )
+        with pytest.raises(SupertoneServerError):
+            await client.get_voice_usage(
+                voice_id="v1",
+                start_date="2026-05-01",
+                end_date="2026-05-08",
+            )
+
+    @pytest.mark.asyncio
+    async def test_no_response_raises_connection_error(self, client):
+        client._sdk.usage.get_voice_usage_async = AsyncMock(
+            side_effect=NoResponseError("no response")
+        )
+        with pytest.raises(SupertoneConnectionError):
+            await client.get_voice_usage(
+                voice_id="v1",
+                start_date="2026-05-01",
+                end_date="2026-05-08",
+            )
+
+    @pytest.mark.asyncio
+    async def test_connect_error_raises_connection_error(self, client):
+        client._sdk.usage.get_voice_usage_async = AsyncMock(
+            side_effect=httpx.ConnectError("refused")
+        )
+        with pytest.raises(SupertoneConnectionError):
+            await client.get_voice_usage(
+                voice_id="v1",
+                start_date="2026-05-01",
+                end_date="2026-05-08",
+            )
+
+    @pytest.mark.asyncio
+    async def test_timeout_raises_connection_error(self, client):
+        client._sdk.usage.get_voice_usage_async = AsyncMock(
+            side_effect=httpx.TimeoutException("timeout")
+        )
+        with pytest.raises(SupertoneConnectionError):
+            await client.get_voice_usage(
+                voice_id="v1",
+                start_date="2026-05-01",
+                end_date="2026-05-08",
+            )
