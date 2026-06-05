@@ -1,81 +1,68 @@
-# Project Status: Supertone TTS MCP Server
+# Project Status: Supertone MCP Server
 
-> Last updated: 2026-05-27
+> Last updated: 2026-06-05
 
 ## Current Milestone
 
-**M4: v0.2 implementation** — Documentation for v0.2 (voice discovery, duration prediction, voice cloning CRUD) is complete. Implementation issues ISSUE-014 through ISSUE-020 are queued.
+**0.2.0 — Composable SDK toolkit (shipped to `main`, releasing via `v0.2.0` tag).**
+The server is reframed from "TTS the LLM's output" to a composable toolkit the LLM
+assembles: synthesis with per-call control (`output_mode`/`autoplay`/`streaming`/`model`),
+voice discovery & preview, duration/credit prediction, usage tracking, and full
+custom-voice CRUD — across 31 languages and 7 models.
 
-## Issue Summary (v0.2 sprint)
+> Versioning note: the discovery/cloning work historically called "v0.2" in the planning
+> docs and the composable-toolkit pivot called "v0.3" in `issues.md` are released **together
+> as package version 0.2.0** (the version field never shipped a standalone 0.2.0 before).
+
+## Issue Summary
 
 | Metric | Count |
 |--------|-------|
-| Total v0.2 docs/impl issues | 8 (ISSUE-013–020) |
-| Done | 7 (ISSUE-013, ISSUE-014, ISSUE-015, ISSUE-016, ISSUE-017, ISSUE-018, ISSUE-019) |
+| v0.3 batch (ISSUE-021–028) | 8 |
+| Done | 8 (all shipped) |
 | In progress | 0 |
-| Remaining | 1 (ISSUE-020) |
+| Remaining | 0 |
 
-> v0.1 (ISSUE-001–010, 012) shipped. ISSUE-011 (MCP Registry + PulseMCP) is parked pending manual PyPI publish + registry form submission.
+> v0.1 (ISSUE-001–010, 012) and the v0.2 discovery/cloning issues (ISSUE-013–020) previously shipped.
+> ISSUE-011 (MCP Registry registration) is handled by the `publish-registry` CI job on the `v0.2.0` tag.
 
-### v0.1 Merged PRs (history)
+### v0.3 Merged PRs (composable-toolkit pivot → 0.2.0)
 
-| PR | Title | Issues |
-|----|-------|--------|
-| #1 | feat(scaffold): initialize project structure | ISSUE-001 |
-| #2 | feat(types): define domain types, constants, and exceptions | ISSUE-002 |
-| #3 | ci: add GitHub Actions CI pipeline | ISSUE-009 |
-| #4 | feat(client): implement SupertoneClient | ISSUE-003 |
-| #5 | feat(tools): implement input validation and output formatting | ISSUE-004 |
-| #6 | feat(tools): implement text_to_speech and list_voices handlers | ISSUE-005, ISSUE-006 |
-| #7 | feat(server): implement MCP server entry point | ISSUE-007 |
-| #8 | feat(packaging): complete PyPI metadata and README | ISSUE-008, ISSUE-010 |
-| #9 | feat(stream): implement streaming TTS with Supertone SDK | ISSUE-012 |
+| PR | Title | Issue |
+|----|-------|-------|
+| #32 | sync 7-model enum + DEFAULT_MODEL=sona_speech_2_flash + SDK pin | ISSUE-021 |
+| #34 | per-call output_mode/autoplay params, drop behavior env vars (BREAKING) | ISSUE-022 |
+| #36 | per-call streaming param + synthesize/stream routing + sona_speech_1 validation | ISSUE-023 |
+| #38 | relax 300-char hard limit, delegate long text to SDK auto-chunk | ISSUE-024 |
+| #40 | expose include_phonemes + normalized_text pass-through params | ISSUE-025 |
+| #42 | add get_custom_voice tool | ISSUE-026 |
+| #44 | add get_usage_history + get_voice_usage tools | ISSUE-027 |
+| #46 | README reframe + 31-language sync + 0.2.0 release prep | ISSUE-028 |
 
-### v0.2 Merged PRs
+## Next Steps
 
-| PR | Title | Issues |
-|----|-------|--------|
-| #10 | docs(claude): sync PRD and ux_spec for v0.2 voice tools | ISSUE-013 |
-| #12 | feat(client): add search_voices, get_voice, get_credit_balance | ISSUE-014 |
-| #14 | feat(tools): replace list_voices with search_voice (breaking) | ISSUE-015 |
-| #16 | feat(tools): add get_voice and get_credit_balance handlers | ISSUE-016 |
-| #18 | feat(tools): add preview_voice tool (returns sample URLs) | ISSUE-017 |
-| #20 | feat(tools): add predict_duration tool (client + handler) | ISSUE-018 |
-| #22 | feat(clone): add clone_voice tool for single-file voice cloning | ISSUE-019 |
-
-### v0.3 Merged PRs
-
-| PR | Title | Issues |
-|----|-------|--------|
-| #32 | chore(constants): sync 7-model enum + DEFAULT_MODEL=sona_speech_2_flash | ISSUE-021 |
-| #34 | feat(tts): per-call output_mode/autoplay params, drop behavior env vars (BREAKING) | ISSUE-022 |
-| #36 | feat(tts): per-call streaming param + synthesize/stream routing + sona_speech_1 validation | ISSUE-023 |
-| #38 | feat(tools): relax 300-char hard limit, delegate long text to SDK auto-chunk | ISSUE-024 |
-| #40 | feat(tts): expose include_phonemes + normalized_text pass-through params | ISSUE-025 |
-
-## Next Steps (v0.2)
-
-1. **ISSUE-014–020**: Implement the v0.2 tool surface — `search_voice`, `get_voice`, `get_credit_balance`, `preview_voice`, `predict_duration`, `clone_voice`, `search/edit/delete_custom_voice`. Note `list_voices` is removed (breaking change).
-2. **PyPI 0.2.0**: After ISSUE-014–020 ship, bump version and publish.
-3. **ISSUE-011** (parked): Create server.json, register on MCP Registry + PulseMCP.
+1. **Release 0.2.0**: push the `v0.2.0` tag → CI `publish` (PyPI, trusted publishing) + `publish-registry` (MCP Registry).
+2. **Post-release**: verify the PyPI page + MCP Registry listing; smoke-test `uvx supertone-mcp` from a clean client.
+3. **Follow-ups** (non-blocking): rotate the plaintext API key in `.mcp.json` and remove it from version control; add a `SUPPORTED_*`-vs-SDK-enum guard test to catch future SDK drift loudly.
 
 ## Key Risks
 
 | Risk | Impact | Status |
 |------|--------|--------|
-| R1: Supertone API docs incomplete | High | Mitigated — using official Supertone SDK in v0.2 |
-| R4: Default voice_id unknown | Medium | Mitigated — `SUPERTONE_DEFAULT_VOICE_ID` env var added in v0.1.x |
-| R6: PyPI name availability | High | Open — confirm before 0.2.0 publish |
-| R8 (v0.2): Breaking removal of `list_voices` | Medium | README + CHANGELOG must document migration to `search_voice` before publishing 0.2.0 |
+| R6: PyPI 0.2.0 availability | High | **Cleared** — PyPI holds only 0.1.0/0.1.1; 0.2.0 is free |
+| R8: Breaking changes (env→param, autoplay/streaming defaults, list_voices removal) | Medium | Mitigated — README "Breaking changes & migration (0.2.0)" + CHANGELOG document the migration |
+| R9: Plaintext API key committed in `.mcp.json` | Medium | Open — rotate + remove from tracked file (follow-up) |
+| R10: Constant lists drift from SDK enums | Low | Observed twice (models, languages); guard-test follow-up proposed |
 
 ## Documents
 
 | Document | Status |
 |----------|--------|
-| `PRD.md` | v0.2 (updated for new tools, FR-012–019, US-008–011, non-goals revised) |
-| `docs/requirements.md` | v0.2 (US-008–011, FR-012–019 added; out-of-scope list updated) |
-| `docs/ux_spec.md` | v0.2 (tool schemas and error messages for all new tools) |
-| `docs/architecture.md` | v0.2 (SDK-backed client; expanded tool surface in `tools.py`) |
-| `docs/data_model.md` | v0.1 — to be revisited if cloning needs new types |
-| `docs/test_plan.md` | v0.1 — to extend as ISSUE-014–020 land |
-| `issues.md` | ISSUE-021–027 all shipped (v0.3 code complete); ISSUE-028 release deferred to human (Manual) |
+| `PRD.md` | v0.3 (composable SDK toolkit pivot) |
+| `docs/requirements.md` | v0.3 (FR-001 revised; FR-020–022; US-012–017; NFR-009) |
+| `docs/ux_spec.md` | v0.3 (new params + error strings; new tools) |
+| `docs/architecture.md` | v0.3 (env→param, synthesize/stream routing, SDK pin, new tools) |
+| `docs/data_model.md` | v0.3 (new request-shape fields; usage response shapes) |
+| `docs/test_plan.md` | v0.3 (streaming routing, output_mode, new tools, relaxed length) |
+| `CHANGELOG.md` | 0.2.0 entry (pending `v0.2.0` tag) |
+| `issues.md` | ISSUE-021–028 all shipped (PRs #32–#46) |
