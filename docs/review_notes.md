@@ -1,3 +1,63 @@
+# Review Notes — ISSUE-022 (PR #34)
+
+Remove behavior env vars → per-call `output_mode`/`autoplay` (BREAKING).
+
+## Code Review
+
+**Verdict: APPROVE.** No Critical/High findings. Clean, well-scoped refactor.
+
+Findings:
+- Correctness — `validate_output_mode(mode)` validates the per-call argument
+  against `VALID_OUTPUT_MODES`, case-normalizes, and raises with the AC error
+  string `Invalid output mode: "{mode}". Valid modes: files, resources, both.`
+  The quoted token preserves the original (un-normalized) input, matching the
+  existing validator style in `tools.py`.
+- No-API-call on invalid mode — validation runs inside the pre-client `try`
+  block; `text_to_speech` returns the error string before constructing
+  `SupertoneClient`. Covered by
+  `test_invalid_output_mode_returns_error_no_api_call` (asserts
+  `MC.assert_not_called()`).
+- Env ignored for behavior — `validate_output_mode` reads no environment;
+  autoplay is driven solely by the `autoplay` arg (default False). The removed
+  `SUPERTONE_MCP_OUTPUT_MODE` / `SUPERTONE_MCP_AUTOPLAY` vars are referenced
+  ONLY by the one-time migration warning and in docstrings — never to drive
+  logic. Verified via grep.
+- `resolve_output_mode()` and `resolve_autoplay()` fully removed from `src/`.
+- predict_duration parity — the schema-parity test was updated (not weakened):
+  `predict_duration` produces no audio, so it legitimately excludes the new
+  synthesis-only output-handling params; the test now asserts synthesis-input
+  parity AND that the output-handling params are absent from `predict_duration`.
+
+Review lessons applied:
+- RL-004 (NoReturn): N/A — `validate_output_mode` returns a value and raises
+  only conditionally; `-> str` is correct, no always-raises helper added.
+- RL-001 (TypedDict): N/A — no TypedDicts touched.
+
+## Security Findings
+
+- No Critical/High/Medium issues.
+- The migration warning prints only env var **names** that are set, never their
+  values — no risk of leaking secrets/config. Logging goes to stderr (stdout is
+  reserved for the MCP stdio protocol). Informational only.
+- No new injection/auth/input-validation surface; behavior moved from env to
+  typed function parameters (reduces ambient/implicit config surface).
+
+## Tests
+
+- `uv run pytest` → 448 passed. `ruff check` + `ruff format --check` clean.
+- AC coverage: all 8 ACs mapped to parameter-based tests in
+  `tests/test_tools.py` (`TestValidateOutputMode`, `TestTextToSpeechHandler`)
+  and `tests/test_server.py` (`TestToolRegistration`).
+- Checkpoint runner caveat: bare `python3 -m pytest` hits the pre-existing
+  pyenv-3.10 + pytest-asyncio collection INTERNALERROR (sprint_state.md Tooling
+  Notes). `uv run pytest` + CI (3.12/3.13) are the authoritative gates.
+
+## Follow-ups
+
+None. No unresolved Critical/High findings; no new follow-up issues required.
+
+---
+
 # Review Notes: ISSUE-020 (PR #23)
 
 ## Reviewer Summary
