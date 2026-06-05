@@ -136,6 +136,33 @@ class TestToolRegistration:
         haystack = (prop_desc + " " + (tool.description or "")).lower()
         assert "sona_speech_1" in haystack
 
+    def test_text_to_speech_has_phoneme_params(self):
+        """ISSUE-025: include_phonemes + normalized_text present, optional,
+        with correct types/defaults."""
+        tool = mcp._tool_manager._tools["text_to_speech"]
+        schema = tool.parameters
+        properties = schema["properties"]
+        required = schema.get("required", [])
+
+        assert "include_phonemes" in properties
+        assert properties["include_phonemes"].get("type") == "boolean"
+        assert properties["include_phonemes"].get("default") is False
+        assert "include_phonemes" not in required
+
+        assert "normalized_text" in properties
+        assert "normalized_text" not in required
+
+    def test_normalized_text_documents_model_constraint(self):
+        """ISSUE-025: normalized_text documentation states it applies only to
+        sona_speech_2 / sona_speech_2_flash."""
+        tool = mcp._tool_manager._tools["text_to_speech"]
+        prop_desc = tool.parameters["properties"]["normalized_text"].get(
+            "description", ""
+        )
+        haystack = (prop_desc + " " + (tool.description or "")).lower()
+        assert "sona_speech_2" in haystack
+        assert "sona_speech_2_flash" in haystack
+
     def test_search_voice_all_filters_optional(self):
         """search_voice must accept zero filters."""
         tool = mcp._tool_manager._tools["search_voice"]
@@ -309,16 +336,25 @@ class TestToolRegistration:
         text_to_speech exposes (voice_id, language, output_format, model,
         speed, pitch_shift, style) as optional synthesis inputs, plus the
         output/routing-handling params (output_mode, autoplay added in
-        ISSUE-022; streaming added in ISSUE-023). predict_duration produces no
-        audio, so it intentionally excludes the output/routing params but must
-        match on every synthesis input.
+        ISSUE-022; streaming added in ISSUE-023) and the audio-only pass-through
+        params (include_phonemes, normalized_text added in ISSUE-025).
+        predict_duration produces no audio, so it intentionally excludes the
+        output/routing AND audio-only pass-through params but must match on
+        every synthesis input.
         """
         tts_tool = mcp._tool_manager._tools["text_to_speech"]
         pd_tool = mcp._tool_manager._tools["predict_duration"]
         tts_props = set(tts_tool.parameters["properties"].keys())
         pd_props = set(pd_tool.parameters["properties"].keys())
-        # output/routing handling is synthesis-only; predict_duration omits it.
-        output_handling = {"output_mode", "autoplay", "streaming"}
+        # output/routing + audio-only pass-through is synthesis-only;
+        # predict_duration (no audio output) omits all of these.
+        output_handling = {
+            "output_mode",
+            "autoplay",
+            "streaming",
+            "include_phonemes",
+            "normalized_text",
+        }
         synthesis_inputs = tts_props - output_handling
         assert synthesis_inputs == pd_props, (
             f"predict_duration schema mismatch with text_to_speech: "

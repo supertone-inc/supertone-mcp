@@ -203,6 +203,96 @@ class TestSynthesize:
         assert call_kwargs["style"] is None
 
     @pytest.mark.asyncio
+    async def test_forwards_include_phonemes_true(self, client):
+        """ISSUE-025: include_phonemes=True forwarded to the SDK call."""
+        httpx_resp = _make_httpx_response()
+        sdk_resp = _make_create_speech_response(httpx_resp)
+        client._sdk.text_to_speech.create_speech_async = AsyncMock(
+            return_value=sdk_resp
+        )
+
+        await client.synthesize(
+            voice_id="v1",
+            text="Hello",
+            language="ko",
+            output_format="mp3",
+            model="sona_speech_2_flash",
+            speed=1.0,
+            pitch_shift=0,
+            include_phonemes=True,
+        )
+
+        call_kwargs = client._sdk.text_to_speech.create_speech_async.call_args[1]
+        assert call_kwargs["include_phonemes"] is True
+
+    @pytest.mark.asyncio
+    async def test_include_phonemes_defaults_false(self, client):
+        """ISSUE-025: include_phonemes defaults to False when omitted."""
+        httpx_resp = _make_httpx_response()
+        sdk_resp = _make_create_speech_response(httpx_resp)
+        client._sdk.text_to_speech.create_speech_async = AsyncMock(
+            return_value=sdk_resp
+        )
+
+        await client.synthesize(
+            voice_id="v1",
+            text="Hello",
+            language="ko",
+            output_format="mp3",
+            model="sona_speech_2_flash",
+            speed=1.0,
+            pitch_shift=0,
+        )
+
+        call_kwargs = client._sdk.text_to_speech.create_speech_async.call_args[1]
+        assert call_kwargs["include_phonemes"] is False
+
+    @pytest.mark.asyncio
+    async def test_forwards_normalized_text(self, client):
+        """ISSUE-025: normalized_text forwarded to the SDK call."""
+        httpx_resp = _make_httpx_response()
+        sdk_resp = _make_create_speech_response(httpx_resp)
+        client._sdk.text_to_speech.create_speech_async = AsyncMock(
+            return_value=sdk_resp
+        )
+
+        await client.synthesize(
+            voice_id="v1",
+            text="Hello",
+            language="ko",
+            output_format="mp3",
+            model="sona_speech_2_flash",
+            speed=1.0,
+            pitch_shift=0,
+            normalized_text="안녕하세요",
+        )
+
+        call_kwargs = client._sdk.text_to_speech.create_speech_async.call_args[1]
+        assert call_kwargs["normalized_text"] == "안녕하세요"
+
+    @pytest.mark.asyncio
+    async def test_normalized_text_defaults_none(self, client):
+        """ISSUE-025: normalized_text defaults to None when omitted."""
+        httpx_resp = _make_httpx_response()
+        sdk_resp = _make_create_speech_response(httpx_resp)
+        client._sdk.text_to_speech.create_speech_async = AsyncMock(
+            return_value=sdk_resp
+        )
+
+        await client.synthesize(
+            voice_id="v1",
+            text="Hello",
+            language="ko",
+            output_format="mp3",
+            model="sona_speech_2_flash",
+            speed=1.0,
+            pitch_shift=0,
+        )
+
+        call_kwargs = client._sdk.text_to_speech.create_speech_async.call_args[1]
+        assert call_kwargs["normalized_text"] is None
+
+    @pytest.mark.asyncio
     async def test_unauthorized_raises_auth_error(self, client):
         client._sdk.text_to_speech.create_speech_async = AsyncMock(
             side_effect=_sdk_error(UnauthorizedErrorResponse)
@@ -400,6 +490,74 @@ class TestSynthesizeStream:
             received.append(chunk)
 
         assert received == chunks
+
+    @pytest.mark.asyncio
+    async def test_forwards_phoneme_and_normalized_params(self, client):
+        """ISSUE-025: synthesize_stream forwards include_phonemes +
+        normalized_text to stream_speech_async."""
+        chunks = [b"\xff\xfb" * 5]
+
+        async def mock_aiter_bytes():
+            for c in chunks:
+                yield c
+
+        mock_resp = MagicMock(spec=httpx.Response)
+        mock_resp.aiter_bytes = mock_aiter_bytes
+        stream_resp = MagicMock()
+        stream_resp.result = mock_resp
+        client._sdk.text_to_speech.stream_speech_async = AsyncMock(
+            return_value=stream_resp
+        )
+
+        async for _ in client.synthesize_stream(
+            voice_id="v1",
+            text="Hello",
+            language="ko",
+            output_format="mp3",
+            model="sona_speech_1",
+            speed=1.0,
+            pitch_shift=0,
+            include_phonemes=True,
+            normalized_text="안녕하세요",
+        ):
+            pass
+
+        call_kwargs = client._sdk.text_to_speech.stream_speech_async.call_args[1]
+        assert call_kwargs["include_phonemes"] is True
+        assert call_kwargs["normalized_text"] == "안녕하세요"
+
+    @pytest.mark.asyncio
+    async def test_stream_phoneme_params_default(self, client):
+        """ISSUE-025: synthesize_stream defaults include_phonemes=False,
+        normalized_text=None when omitted."""
+        chunks = [b"\xff\xfb" * 5]
+
+        async def mock_aiter_bytes():
+            for c in chunks:
+                yield c
+
+        mock_resp = MagicMock(spec=httpx.Response)
+        mock_resp.aiter_bytes = mock_aiter_bytes
+        stream_resp = MagicMock()
+        stream_resp.result = mock_resp
+        client._sdk.text_to_speech.stream_speech_async = AsyncMock(
+            return_value=stream_resp
+        )
+
+        async for _ in client.synthesize_stream(
+            voice_id="v1",
+            text="Hello",
+            language="ko",
+            output_format="mp3",
+            model="sona_speech_1",
+            speed=1.0,
+            pitch_shift=0,
+        ):
+            pass
+
+        call_kwargs = client._sdk.text_to_speech.stream_speech_async.call_args[1]
+        assert call_kwargs["include_phonemes"] is False
+        assert call_kwargs["normalized_text"] is None
 
     @pytest.mark.asyncio
     async def test_unauthorized_raises_auth_error(self, client):

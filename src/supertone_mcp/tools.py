@@ -382,8 +382,17 @@ async def text_to_speech(
     output_mode: str | None = None,
     autoplay: bool = False,
     streaming: bool = False,
+    include_phonemes: bool = False,
+    normalized_text: str | None = None,
 ) -> str | list:
     """Convert text to speech using Supertone TTS API.
+
+    SDK 0.2.3 pass-through params (ISSUE-025):
+      - `include_phonemes`: defaults to False. Forwarded to the SDK; phoneme
+        timing data is not yet surfaced in the response (pass-through only).
+      - `normalized_text`: optional pre-normalized text. Only effective for
+        `sona_speech_2` / `sona_speech_2_flash`; other models ignore it (no
+        client-side rejection).
 
     Output mode and autoplay are decided PER CALL (ISSUE-022):
       - `output_mode`: "files" (default), "resources", or "both". Resolved to
@@ -476,6 +485,8 @@ async def text_to_speech(
                     speed=speed,
                     pitch_shift=pitch_shift,
                     style=style,
+                    include_phonemes=include_phonemes,
+                    normalized_text=normalized_text,
                 ):
                     if file_handle is not None:
                         file_handle.write(chunk)
@@ -509,6 +520,8 @@ async def text_to_speech(
                 speed=speed,
                 pitch_shift=pitch_shift,
                 style=style,
+                include_phonemes=include_phonemes,
+                normalized_text=normalized_text,
             )
             if output_path is not None:
                 with open(output_path, "wb") as fh:

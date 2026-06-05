@@ -614,6 +614,75 @@ class TestTextToSpeechHandler:
         assert Path(path).read_bytes() == _AUDIO_DATA
 
     @pytest.mark.asyncio
+    async def test_passes_phoneme_params_to_synthesize(self, tmp_path):
+        """ISSUE-025: include_phonemes + normalized_text forwarded to the
+        one-shot synthesize path."""
+        with (
+            patch.dict(os.environ, _env_files(tmp_path)),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.synthesize = _mock_synthesize()
+            inst.synthesize_stream = _mock_stream()
+            inst.aclose = AsyncMock()
+
+            await text_to_speech(
+                text="hi",
+                model="sona_speech_2_flash",
+                include_phonemes=True,
+                normalized_text="안녕하세요",
+            )
+
+        call_kwargs = inst.synthesize.call_args[1]
+        assert call_kwargs["include_phonemes"] is True
+        assert call_kwargs["normalized_text"] == "안녕하세요"
+
+    @pytest.mark.asyncio
+    async def test_phoneme_params_default_to_synthesize(self, tmp_path):
+        """ISSUE-025: defaults -> include_phonemes=False, normalized_text=None
+        forwarded to the one-shot synthesize path."""
+        with (
+            patch.dict(os.environ, _env_files(tmp_path)),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.synthesize = _mock_synthesize()
+            inst.synthesize_stream = _mock_stream()
+            inst.aclose = AsyncMock()
+
+            await text_to_speech(text="hi")
+
+        call_kwargs = inst.synthesize.call_args[1]
+        assert call_kwargs["include_phonemes"] is False
+        assert call_kwargs["normalized_text"] is None
+
+    @pytest.mark.asyncio
+    async def test_passes_phoneme_params_to_stream(self, tmp_path):
+        """ISSUE-025: include_phonemes + normalized_text forwarded to the
+        streaming synthesize_stream path."""
+        stream_mock = MagicMock(side_effect=_mock_stream())
+        with (
+            patch.dict(os.environ, _env_files(tmp_path)),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.synthesize = _mock_synthesize()
+            inst.synthesize_stream = stream_mock
+            inst.aclose = AsyncMock()
+
+            await text_to_speech(
+                text="hi",
+                model="sona_speech_1",
+                streaming=True,
+                include_phonemes=True,
+                normalized_text="안녕하세요",
+            )
+
+        call_kwargs = stream_mock.call_args[1]
+        assert call_kwargs["include_phonemes"] is True
+        assert call_kwargs["normalized_text"] == "안녕하세요"
+
+    @pytest.mark.asyncio
     async def test_streaming_true_non_sona1_fails_fast(self):
         """AC: streaming=True + non-sona_speech_1 model -> exact error string,
         and NEITHER synthesize NOR synthesize_stream is called (client never

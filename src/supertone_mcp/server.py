@@ -53,6 +53,28 @@ async def text_to_speech(
             )
         ),
     ] = False,
+    include_phonemes: Annotated[
+        bool,
+        Field(
+            description=(
+                "When true, request phoneme timing data alongside the audio "
+                "(SDK 0.2.3). Defaults to false. Note: the phoneme data is not "
+                "yet surfaced in the tool response — this is a pass-through flag "
+                "for now."
+            )
+        ),
+    ] = False,
+    normalized_text: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Optional pre-normalized text to use for synthesis (SDK 0.2.3). "
+                "Only applies to the sona_speech_2 and sona_speech_2_flash "
+                "models; other models ignore it. When omitted, the SDK default "
+                "(None) is used."
+            )
+        ),
+    ] = None,
 ) -> str | list:
     """Generate natural-sounding speech audio from text.
 
@@ -91,6 +113,13 @@ async def text_to_speech(
             supported by model="sona_speech_1"; using streaming=true with any
             other model returns a validation error before any API call.
             Defaults to false (one-shot synthesize).
+        include_phonemes: When true, request phoneme timing data alongside the
+            audio (SDK 0.2.3). Defaults to false. The phoneme data is not yet
+            surfaced in the response — this is a pass-through flag for now.
+        normalized_text: Optional pre-normalized text for synthesis (SDK 0.2.3).
+            Only applies to the "sona_speech_2" and "sona_speech_2_flash"
+            models; other models ignore it. When omitted, the SDK default
+            (None) is used.
     """
     return await tools.text_to_speech(
         text=text,
@@ -104,6 +133,8 @@ async def text_to_speech(
         output_mode=output_mode,
         autoplay=autoplay,
         streaming=streaming,
+        include_phonemes=include_phonemes,
+        normalized_text=normalized_text,
     )
 
 
