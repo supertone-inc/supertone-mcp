@@ -92,11 +92,18 @@ class SupertoneClient:
         speed: float,
         pitch_shift: int,
         style: str | None = None,
+        include_phonemes: bool = False,
+        normalized_text: str | None = None,
     ) -> tuple[bytes, str, float | None]:
         """Synthesize speech using the Supertone SDK (batch mode).
 
         The SDK automatically splits text longer than 300 characters into chunks,
         processes them in parallel, and concatenates the audio.
+
+        `include_phonemes` and `normalized_text` (SDK 0.2.3, ISSUE-025) are
+        forwarded to the SDK as-is. `normalized_text` is only honored by the
+        `sona_speech_2` / `sona_speech_2_flash` models per the SDK; other models
+        ignore it (no client-side rejection).
 
         Returns a tuple of (audio_bytes, content_type, duration_seconds).
         """
@@ -118,6 +125,8 @@ class SupertoneClient:
                 output_format=fmt_enum,
                 voice_settings=voice_settings,
                 style=style,
+                include_phonemes=include_phonemes,
+                normalized_text=normalized_text,
             )
         except (
             UnauthorizedErrorResponse,
@@ -161,11 +170,18 @@ class SupertoneClient:
         speed: float,
         pitch_shift: int,
         style: str | None = None,
+        include_phonemes: bool = False,
+        normalized_text: str | None = None,
     ) -> AsyncIterator[bytes]:
         """Synthesize speech using the Supertone SDK streaming API.
 
         Yields audio data chunks as they are received from the API.
         This reduces time-to-first-audio compared to the batch synthesize() method.
+
+        `include_phonemes` and `normalized_text` (SDK 0.2.3, ISSUE-025) are
+        forwarded to the SDK as-is. `normalized_text` is only honored by the
+        `sona_speech_2` / `sona_speech_2_flash` models per the SDK; other models
+        ignore it (no client-side rejection).
         """
         lang_enum = _LANGUAGE_MAP[language]
         model_enum = _MODEL_MAP[model]
@@ -185,6 +201,8 @@ class SupertoneClient:
                 output_format=fmt_enum,
                 voice_settings=voice_settings,
                 style=style,
+                include_phonemes=include_phonemes,
+                normalized_text=normalized_text,
             )
         except (
             UnauthorizedErrorResponse,
