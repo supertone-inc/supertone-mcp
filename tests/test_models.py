@@ -142,7 +142,10 @@ class TestConstants:
         assert "ko" in SUPPORTED_LANGUAGES
         assert "en" in SUPPORTED_LANGUAGES
         assert "ja" in SUPPORTED_LANGUAGES
-        assert len(SUPPORTED_LANGUAGES) == 23
+        # v0.2: synced to the SDK 0.2.3 language enum (31 languages)
+        for code in ("hr", "lt", "lv", "sk", "sl", "sv", "tr", "uk"):
+            assert code in SUPPORTED_LANGUAGES
+        assert len(SUPPORTED_LANGUAGES) == 31
 
     def test_supported_formats(self):
         assert SUPPORTED_FORMATS == ["mp3", "wav"]
