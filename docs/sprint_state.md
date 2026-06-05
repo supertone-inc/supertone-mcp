@@ -1,46 +1,174 @@
 # Sprint State
 
 ## Meta
-- Started: 2026-05-27
+- Started: 2026-06-05
 - Iteration: 8 / 20
-- Parallel: 1 (serialized — ISSUE-015/016/018/019 all touch tools.py and server.py)
+- Parallel: 1 (serialized — ISSUE-022~027 all touch tools.py + server.py; parallel worktrees would conflict on merge, per v0.2 lesson)
 - Status: completed
-- Scope: v0.2 autonomous phase — ISSUE-015~020 (ISSUE-011 marked Manual, excluded)
+- Scope: v0.3 concept pivot — ISSUE-021~027 (ISSUE-028 release deferred to human; Manual=true, excluded). User directive: auto implement→review→merge code, NO autonomous PyPI publish.
 
 ## Issue Progress
-| Issue | Status | Attempts | Last Error | Phase | PR |
-|-------|--------|----------|------------|-------|----|
-| ISSUE-013 | done | 1 | - | shipped | #10 (merged 9c01cc4) |
-| ISSUE-014 | done | 1 | - | shipped | #12 (merged 22c5bd4) |
-| ISSUE-015 | done | 1 | - | shipped | #14 (merged dcee0fd) |
-| ISSUE-016 | done | 1 | - | shipped | #16 (merged 4875195) |
-| ISSUE-017 | done | 1 | - | shipped | #18 (merged 61be53e) |
-| ISSUE-018 | done | 1 | - | shipped | #20 (merged 86d7f49) |
-| ISSUE-019 | done | 1 | - | shipped | #22 (merged 1f3c479) |
-| ISSUE-020 | done | 1 | - | shipped | #23 (merged b083e22) |
+| Issue | Status | Attempts | Last Error | Phase |
+|-------|--------|----------|------------|-------|
+| ISSUE-021 | done | 0 | PR #32 merged | shipped |
+| ISSUE-022 | done | 1 | PR #34 merged | shipped |
+| ISSUE-023 | done | 0 | PR #36 merged | shipped |
+| ISSUE-024 | done | 0 | PR #38 merged | shipped |
+| ISSUE-025 | done | 0 | PR #40 merged | shipped |
+| ISSUE-026 | done | 0 | PR #42 merged | shipped |
+| ISSUE-027 | done | 0 | PR #44 merged | shipped |
 
 ## Discovered Issues
-- (none — no Critical/High findings during implement or review for this docs-only change)
-- [iteration 3] RL-006 (review_lessons): Map every documented error path in `_handle_sdk_errors` before promising it in a handler. Surfaced by PR #16 (`get_voice` has no 404→`Voice not found: "..."` mapping per ux_spec §4.4). Affects ISSUE-017 (`preview_voice`) and ISSUE-019 (`edit_custom_voice`/`delete_custom_voice`). Candidate tech-debt issue: wire 404 mapping into supertone_client.py._handle_sdk_errors.
-- [iteration 3] RL-001 NOT applied to `VoiceDetailDict` (models.py:90) — still declared `TypedDict, total=False`, making `voice_id`/`name`/`use_case` etc. NotRequired. PR #16's `format_voice_detail` accesses these directly (tools.py:563/564/572). Pytest 235/235 passing because mocks include all keys, but pyright correctly flags as runtime-unsafe. ISSUE-017 will fold the fix into its worktree (apply RL-001: default-required + NotRequired only for `samples`/`thumbnail_image_url`).
-- [iteration 6] **RL-004 lessons-escalation candidate**: re-observed in PR #20 (ISSUE-018), bringing frequency to 2 across multiple PRs. Pattern now affects 8 wrapped methods (synthesize, search_voices, get_voice, get_credit_balance, preview_voice, predict_duration + 2 streaming helpers) and produces 23 of the 28 total pyright errors on `src/supertone_tts_mcp/supertone_client.py`. Single-line fix: annotate `_handle_sdk_errors -> NoReturn`. Recommend a dedicated tech-debt issue to apply the fix in isolation.
-- [iteration 6] **UX-spec / constants drift (Low)**: ux_spec §4.1 + §4.7 say pitch-shift range is `-12 to +12 semitones`, but `constants.PITCH_SHIFT_MIN/MAX = ±24` and the error string renders the wider range. Affects every TTS-style tool (`text_to_speech`, `predict_duration`, etc.). Predates this PR. Recommend a docs-only follow-up to reconcile (either tighten constants to ±12 or widen the ux_spec range).
-- **Pre-existing pyright tech debt** (surfaced 2026-05-27 by IDE diagnostics on ISSUE-015 worktree; not introduced by PR #14): `tools.py` lines 12 (mutagen private import), 337 (output_dir possibly unbound), 401 (Optional.parent), 425 (str|None → file_path), 435 (bytes|None → b64encode); `tests/test_tools.py` lines 533/684/717/785/831/859 (audio mode helper types). All originate from commits b9928104/27c172b1/e37fe300 (ISSUE-012 era). Pytest 197/197 passing — runtime-safe. Candidate for a future tech-debt issue.
+- [iteration 1] ISSUE-021 review: predict_duration docstring stale default
+  ("sona_speech_1" -> "sona_speech_2_flash"). Severity Medium. FIXED in-review
+  within PR #32 (one-line doc fix); no follow-up issue needed.
+- [iteration 1] Observation (not a blocking issue): no `tests/test_constants.py`
+  exists, but constants are covered by `tests/test_models.py::TestConstants` and
+  `tests/test_tools.py::TestModelConstants`. No real coverage gap; testgen
+  auto-fill skipped. Optional future cleanup: rename/relocate constant tests.
+
+- [iteration 2] ISSUE-022 shipped (PR #34 merged → squash 05faea2). PIPELINE
+  implement→review→ship clean. `uv run pytest` 448 passed on branch + on main
+  post-merge; CI test (3.12)+(3.13) green. No test gaps (changed src files
+  tools.py/server.py/constants.py all covered by test_tools.py/test_server.py).
+  Reused the known checkpoint-runner caveat: the bare `python3 -m pytest`
+  used by the implement `test`, review `test`, and ship `smoke` checkpoints
+  hit the pre-existing pyenv-3.10 + pytest-asyncio collection INTERNALERROR
+  (false-negative); treated `uv run pytest` + CI as authoritative per the
+  documented Tooling Notes. No developer/reviewer Critical/High findings →
+  no follow-up issues created.
+
+- [iteration 3] ISSUE-023 shipped (PR #36 merged → squash 626ccc8). PIPELINE
+  implement→review→ship clean. GH issue #35 created + closed via PR.
+  `uv run pytest` 456 passed on branch + on main post-merge; CI test (3.12) +
+  (3.13) green; publish/publish-registry correctly skipped (no release).
+  Default routing flipped from synthesize_stream to one-shot synthesize;
+  fail-fast sona_speech_1-only streaming validation added. Reused the known
+  checkpoint-runner caveat: implement `test`, review `test`, and ship `smoke`
+  bare `python3 -m pytest` hit the pre-existing pyenv-3.10 + pytest-asyncio
+  collection INTERNALERROR (false-negative); treated `uv run pytest` + CI as
+  authoritative per Tooling Notes. Review: no Critical/High findings (one Low
+  parity observation, not a regression) → no follow-up issues. Test-gap
+  auto-fill: changed src files tools.py/server.py both covered by
+  test_tools.py/test_server.py → testgen skipped.
+
+- [iteration 4] ISSUE-024 shipped (PR #38 merged → squash 7a3d2fe; GH issue #37
+  created + closed via PR). PIPELINE implement→review→ship clean. Removed the
+  300-char hard cap: deleted `validate_text_max_length` (its only caller was
+  `predict_duration`) + its call site, dropped the now-unused `TEXT_MAX_LENGTH`
+  import; `validate_text` (empty guard) retained; updated text_to_speech +
+  predict_duration descriptions/docstrings to note auto-chunking + credit/latency
+  scaling. `uv run pytest` 456 passed on branch + on main post-merge; CI test
+  (3.12)+(3.13) green; publish/publish-registry correctly skipped (no release).
+  Reused the known checkpoint-runner caveat: implement `test`, review `test`, and
+  ship `smoke` bare `python3 -m pytest` hit the pre-existing pyenv-3.10 +
+  pytest-asyncio collection INTERNALERROR (false-negative); treated uv+CI as
+  authoritative per Tooling Notes. Review: no Critical/High/Medium findings, no
+  security concerns → no follow-up issues. Test-gap auto-fill: changed src files
+  tools.py/server.py both covered by test_tools.py/test_server.py → testgen skipped.
+
+- [iteration 5] ISSUE-025 shipped (PR #40 merged → squash 2a826ba; GH issue #39
+  created + closed via PR). PIPELINE implement→review→ship clean. Exposed SDK
+  0.2.3 `include_phonemes` (bool, default False) + `normalized_text` (str | None,
+  default None) on `text_to_speech`, threaded through `client.synthesize` AND
+  `synthesize_stream` to `create_speech_async` / `stream_speech_async` (SDK kwarg
+  names verified in the installed SDK before forwarding). server.py registers
+  both with schema-visible Field descriptions; `normalized_text` doc states it
+  applies only to sona_speech_2 / sona_speech_2_flash (no client-side rejection —
+  other models ignore it per SDK). Updated the `predict_duration` parity test to
+  classify the two new audio-only params as synthesis-output-only (predict_duration
+  produces no audio). `uv run pytest` 467 passed on branch + on main post-merge
+  (+11 new tests over 456); CI test (3.12)+(3.13) green; publish/publish-registry
+  correctly skipped (no release). Reused the known checkpoint-runner caveat:
+  implement `red`/`test`, review `test`, and ship `smoke` bare `python3 -m pytest`
+  hit the pre-existing pyenv-3.10 + pytest-asyncio collection INTERNALERROR
+  (false-negative for green phases); treated uv+CI as authoritative per Tooling
+  Notes. Review: no Critical/High/Medium findings, no security concerns → no
+  follow-up issues; review_lessons.md unchanged (no new preventable pattern).
+  Test-gap auto-fill: changed src files server.py/supertone_client.py/tools.py all
+  covered by test_server.py/test_supertone_client.py/test_tools.py → testgen skipped.
+
+- [iteration 6] ISSUE-026 shipped (PR #42 merged -> squash 843859b; GH issue #41
+  created + closed via PR). PIPELINE implement->review->ship clean. Added a new
+  read-only tool get_custom_voice(voice_id): client wrapper
+  SupertoneClient.get_custom_voice wrapping custom_voices.get_custom_voice_async
+  (maps voice_id/name/optional description via the shared _handle_sdk_errors
+  pattern); tools.get_custom_voice handler (fail-fast empty/whitespace voice_id
+  reuses the EXACT existing "voice_id must not be empty." string, mirrors
+  get_voice error handling) + format_custom_voice_detail formatter reusing the
+  format_custom_voice_list field style; server.py registration with required
+  voice_id. VERIFIED SDK GetCustomVoiceResponse shape against the installed SDK
+  (models/getcustomvoiceresponse.py): only voice_id, name, nullable description
+  exist -- there is NO created_at field, so the spec's "optional created_at" was
+  deliberately NOT mapped (truthful to source data, RL-001-consistent; same
+  decision already documented for format_custom_voice_list). Reused existing
+  CustomVoiceDict (no new TypedDict). `uv run pytest` 495 passed on branch + on
+  main post-merge (+28 new tests over 467); CI test (3.12)+(3.13) green;
+  publish/publish-registry correctly skipped (no release). ruff check + format
+  clean (applied 2 pre-existing import-group blank-line fixes that the
+  uncommitted-on-main ruff.toml now enforces). Reused the known checkpoint-runner
+  caveat: implement red/test, review test, and ship smoke bare `python3 -m pytest`
+  hit the pre-existing pyenv-3.10 + pytest-asyncio collection INTERNALERROR
+  (false-negative for green phases); treated uv+CI as authoritative per Tooling
+  Notes. Review: no Critical/High/Medium findings, no security concerns -> no
+  follow-up issues; review_lessons.md unchanged (no new preventable pattern).
+  Test-gap auto-fill: changed src files server.py/supertone_client.py/tools.py all
+  covered by test_server.py/test_supertone_client.py/test_tools.py -> testgen skipped.
+
+- [iteration 7] ISSUE-027 shipped (PR #44 merged -> squash 2fd077f; GH issue #43
+  created + closed via PR). FINAL v0.3 code issue. PIPELINE implement->review->ship
+  clean. Added two read-only usage tools: get_usage_history() wrapping
+  usage.get_usage_async (advanced analytics) and get_voice_usage(voice_id)
+  wrapping usage.get_voice_usage_async. SDK 0.2.3 signatures + response shapes
+  VERIFIED against the installed SDK before mapping (usage.py,
+  usageanalyticsresponse/usagebucket/usageresult,
+  getusagelistv1response/getusageresponsev1data): get_usage_async REQUIRES
+  start_time/end_time (RFC3339) -> wrapper supplies a default 30-day UTC window;
+  get_voice_usage_async REQUIRES start_date/end_date (YYYY-MM-DD) and has NO
+  voice_id param, so the wrapper fetches the date-range list and filters records
+  client-side by voice_id (the only truthful way to honor both AC + SDK, recall
+  ISSUE-026 spec-vs-SDK drift lesson). Only fields that actually exist are mapped;
+  SDK api_key (sensitive) + thumbnail_url (out of scope) deliberately NOT
+  surfaced -- no invented fields. 5 new TypedDicts (UsageResultDict/UsageBucketDict/
+  UsageHistoryDict/VoiceUsageRecordDict/VoiceUsageDict) follow RL-001 (required by
+  default, NotRequired only for genuinely nullable). Both wrappers reuse the
+  shared _handle_sdk_errors except-tuple; fail-fast empty/whitespace voice_id
+  reuses the EXACT existing "voice_id must not be empty." string; empty usage
+  returns a "no usage" message (NOT an error) per AC. server.py registers both
+  (get_usage_history no params; get_voice_usage required voice_id). 53 new tests
+  (RL-002 symmetric error branches on both client methods). `uv run pytest` 548
+  passed on branch + on main post-merge (+53 over 495); CI test (3.12)+(3.13)
+  green on PR #44 AND on the post-merge main push run; publish/publish-registry
+  correctly skipped (no release). ruff check + format clean. Reused the known
+  checkpoint-runner caveat: implement red/test, review test, and ship smoke bare
+  `python3 -m pytest` hit the pre-existing pyenv-3.10 + pytest-asyncio collection
+  INTERNALERROR (false-negative for green phases; re-confirmed identical on
+  untouched main this iteration); treated uv+CI as authoritative per Tooling
+  Notes; did NOT revert the merge. Review: APPROVE, no Critical/High findings ->
+  no follow-up issues created. One non-blocking Medium follow-up logged in
+  review_notes.md: the two usage endpoints raise SupertoneDefaultError in
+  production which _handle_sdk_errors does not map (pre-existing RL-006-class gap,
+  consistent across the whole codebase, AC satisfied as written since tests mock
+  the typed UnauthorizedErrorResponse which the wrappers DO map). review_lessons.md
+  unchanged (RL-006 already catalogued; no new preventable pattern). Test-gap
+  auto-fill: changed src files models.py/server.py/supertone_client.py/tools.py all
+  covered by their test_*.py -> testgen skipped. v0.3 CODE SCOPE COMPLETE
+  (ISSUE-021..027 all shipped); ISSUE-028 (docs/release) remains Manual/excluded
+  -- no autonomous publish/version-bump per the user directive.
 
 ## Escalations
-- (none)
+- (none) — ISSUE-021..ISSUE-027 all shipped cleanly. v0.3 code scope complete.
+  ISSUE-028 (release) deferred to human (Manual=true, excluded from this sprint).
 
-## Notes
-- ISSUE-013 PR #10 merged at commit 9c01cc4. PRD.md, docs/requirements.md, docs/architecture.md, docs/ux_spec.md, STATUS.md all updated for v0.2.
-- `list_voices` is removed in v0.2 (breaking change, no deprecated alias). README/CHANGELOG must call this out before publishing 0.2.0.
-- User chose progressive execution: ISSUE-013 alone, then review, then ISSUE-014, then 015~020.
-- ISSUE-014 PR #12 merged at commit 22c5bd4. Smoke test on main: 184/184 passing.
-- Sprint resumed 2026-05-27 per user instruction — proceed through ISSUE-015~020, parallel=1.
-- ISSUE-011 is explicitly OUT OF SCOPE for the v0.2 sprint (requires manual PyPI publish + MCP Registry + PulseMCP web form).
-- The uncommitted `issues.md` changes on main (which add ISSUE-012/013 specs) are intentionally left for the user; ISSUE-013's scope excluded touching issues.md.
-- ISSUE-015 PR #14 merged at commit dcee0fd. Smoke test on main: 197/197 passing. `list_voices` removed; `search_voice` registered with full 8-filter schema.
-- ISSUE-016 PR #16 merged at commit 4875195. Smoke test on main: 235/235 passing. `get_voice` + `get_credit_balance` registered; UX spec §4.4/§4.5 compliant; RL-006 (404-mapping gap) logged as a follow-up tech-debt candidate.
-- ISSUE-017 PR #18 merged at commit 61be53e. Smoke test on main: 267/267 passing. `preview_voice` tool registered with `voice_id` required + `language/style/model` optional filters; output matches UX spec §4.6 exact format. RL-001 fix-along applied to `VoiceDetailDict` (default-required + `NotRequired` on `samples`/`thumbnail_image_url`); pyright now shows 0 errors on `models.py` and PR #16's `format_voice_detail` type errors at `tools.py:563/564/572` are resolved. Remaining 5 pyright errors on `tools.py` are unchanged ISSUE-012-era tech debt. RL-006 (404 mapping) still applies to `preview_voice` — explicitly out of scope per task instruction.
-- ISSUE-019 PR #22 merged at commit 1f3c479. Smoke test on main: 351/351 passing. `clone_voice` tool registered with `name` + `audio_path` required + `description` optional. SDK wrapper `create_cloned_voice` follows RL-002 symmetric error coverage. RL-004 frequency bumped 2 → 3 (10th wrapped method; +1 pyright error on `supertone_client.py:468`). UX-spec §4.8 wording diverges from issue AC (issue wording took priority); docs-only follow-up recommended.
-- ISSUE-018 PR #20 merged at commit 86d7f49. Smoke test on main: 307/307 passing. `predict_duration` tool registered with `text` required + all `text_to_speech`-style params optional; schema-parity test (`assert tts_props == pd_props`) pins the AC #6 "same parameter schema" clause. RL-002 (symmetric connection-error testing) verified on both layers — SDK wrapper exercises NoResponseError + httpx.ConnectError + httpx.TimeoutException; handler exercises SupertoneConnectionError + aclose on success/failure. RL-005 satisfied: `_make_predict_duration_response(duration: float | None = 2.34)`. Review-fix commit `d7a5b84` hoisted a function-local `TEXT_MAX_LENGTH` import to module-top (ruff PLC0415). Pyright delta vs. baseline 153123e: +1 error on `supertone_client.py:425` — same RL-004 pattern; **RL-004 frequency bumped 1 → 2**, justifying a dedicated tech-debt issue. Pre-existing `tools.py` (5 errors) and `supertone_client.py` (22 prior errors) unchanged.
-- ISSUE-020 PR #23 merged at commit b083e22. Smoke test on main: 434/434 passing. search_custom_voice / edit_custom_voice / delete_custom_voice registered; RL-002 + RL-003 fully exercised; RL-004 frequency 3->4 (5 new pyright errors all in new wrappers); RL-006 still open for both new handlers; UX-spec §4.9 "Created" line + architecture.md pagination note are docs-drift candidates. V0.2 SPRINT COMPLETE: ISSUE-013 -> ISSUE-020 all shipped (8 of 8 in-scope issues).
+## Tooling Notes
+- The implement/review/ship `test` and `smoke` checkpoints (verify_checkpoint.py
+  `_run_python_tests_with_coverage` / `verify_ship_smoke`) invoke a BARE
+  `python3 -m pytest`, which on this machine resolves to pyenv 3.10.15 with
+  pytest 9.0.3 + an incompatible pytest-asyncio. That combo raises a collection
+  INTERNALERROR (`'Package' object has no attribute 'obj'`) and reports a false
+  failure. This reproduces IDENTICALLY on untouched `main` (pre-existing, not
+  caused by any sprint change). Authoritative test results used instead:
+  `uv run pytest` => 453 passed (453 on branch, 453 on main post-merge), and
+  GitHub Actions CI `test (3.12)` + `test (3.13)` => pass. Recommend a kit/CI
+  fix to make the checkpoint runner use the project toolchain (`uv run pytest`)
+  or pin a compatible pytest-asyncio in the checkpoint interpreter.

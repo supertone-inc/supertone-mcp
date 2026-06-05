@@ -139,6 +139,53 @@
 - [ ] Given `edit_custom_voice(voice_id="x")` is called with neither `name` nor `description`, then `At least one of name or description must be provided.` is returned.
 - [ ] Given `delete_custom_voice(voice_id="x")` is called, then `Custom voice deleted. voice_id: x.` is returned. No confirm gate is enforced (v0.2 product decision); the tool description warns the action is irreversible.
 
+### Must (added in v0.3 — composable SDK toolkit pivot)
+
+#### US-012: Per-Call Output Mode
+**As an** MCP user (LLM), **I want** to choose how each TTS result is returned (file on disk / MCP resource / both) on a per-call basis, **so that** I can assemble tools to fit the situation without restarting or reconfiguring the server.
+
+**Acceptance Criteria:**
+- [ ] Given `text_to_speech(text="hi", output_mode="resources")`, then no file is written and the audio is returned as an MCP resource.
+- [ ] Given `output_mode` is omitted, then `files` behavior is used regardless of any `SUPERTONE_MCP_OUTPUT_MODE` env var (which is no longer read).
+- [ ] Given an invalid `output_mode`, then a validation error is returned with no API call.
+
+#### US-013: Per-Call Autoplay
+**As an** MCP user (LLM), **I want** to decide at call time whether the synthesized audio is played locally, **so that** the "playback" side-effect only happens when I intend it.
+
+**Acceptance Criteria:**
+- [ ] Given `autoplay` omitted, then audio is NOT played (default `false`), even if `SUPERTONE_MCP_AUTOPLAY=true` is set (no longer read).
+- [ ] Given `autoplay=true` on macOS, then the audio is played via `afplay` after synthesis.
+
+#### US-014: Per-Call Streaming vs One-Shot
+**As an** MCP user (LLM), **I want** to use non-streaming (one-shot) TTS and choose streaming per call, **so that** I can pick the right mode (complete audio vs progressive processing) for the task.
+
+**Acceptance Criteria:**
+- [ ] Given `streaming` omitted, then one-shot `create_speech_async` is used (default `false`).
+- [ ] Given `streaming=true` with `model=sona_speech_1`, then `stream_speech_async` is used.
+- [ ] Given `streaming=true` with any other model, then the fail-fast validation error is returned before any SDK call.
+
+#### US-015: Per-Call Model Selection
+**As an** MCP user (LLM), **I want** to select the TTS model per call from the 7 SDK 0.2.3 models, **so that** I can trade off quality vs speed per situation.
+
+**Acceptance Criteria:**
+- [ ] Given any of the 7 models (`sona_speech_1`, `sona_speech_2`, `sona_speech_2_flash`, `sona_speech_2t`, `sona_speech_3t`, `supertonic_api_1`, `supertonic_api_3`), then validation passes and synthesis proceeds.
+- [ ] Given `model` omitted, then `sona_speech_2_flash` is used (default).
+
+#### US-016: Single Custom Voice Detail
+**As an** MCP user (LLM), **I want** to fetch the detail of a specific custom voice by id, **so that** I can check a known voice_id's state without running a search.
+
+**Acceptance Criteria:**
+- [ ] Given `get_custom_voice(voice_id="cv1")`, then voice_id, name, and description (and created_at when present) are returned.
+- [ ] Given an empty voice_id, then `voice_id must not be empty.` is returned with no API call.
+
+#### US-017: Usage History and Per-Voice Usage
+**As an** MCP user (LLM), **I want** to query usage history and per-voice usage, **so that** I can analyze credit consumption and manage cost.
+
+**Acceptance Criteria:**
+- [ ] Given `get_usage_history()`, then a plain-text usage summary is returned (or a "no usage" message when empty).
+- [ ] Given `get_voice_usage(voice_id="v1")`, then a usage summary for that voice is returned.
+- [ ] Given an empty voice_id to `get_voice_usage`, then `voice_id must not be empty.` is returned with no API call.
+
 ---
 
 ## Functional Requirements
@@ -146,15 +193,24 @@
 ### Feature Area: TTS Core
 
 #### FR-001: `text_to_speech` MCP Tool
-- **Description:** Expose an MCP tool named `text_to_speech` that calls the Supertone API (`POST /v1/text-to-speech/{voice_id}`) and saves the resulting audio to a local file.
+- **Description:** Expose an MCP tool named `text_to_speech` that calls the Supertone API (`POST /v1/text-to-speech/{voice_id}`) and returns the resulting audio per the requested `output_mode`.
 - **Priority:** Must
-- **Parameters:** `text` (required), `voice_id`, `language`, `output_format`, `speed`, `pitch_shift`, `style` (all optional with defaults).
+- **Parameters:** `text` (required), `voice_id`, `language`, `output_format`, `speed`, `pitch_shift`, `style`, `model`, and the v0.3 additions `output_mode`, `autoplay`, `streaming`, `include_phonemes`, `normalized_text` (all optional with defaults).
+- **v0.3 changes (BREAKING):** Behavior is now driven by per-call parameters, not environment variables (see NFR-009). The removed env vars `SUPERTONE_MCP_OUTPUT_MODE` and `SUPERTONE_MCP_AUTOPLAY` are replaced by the `output_mode` and `autoplay` parameters. The 300-character hard rejection is removed (delegated to SDK auto-chunk; see FR-005 update). The streaming default flips to `false`.
+- **v0.3 parameter additions:**
+  - `output_mode` (str, default `files`): `files` (save to disk, return path), `resources` (return audio as MCP resource, no file), or `both`. Replaces `SUPERTONE_MCP_OUTPUT_MODE`. Invalid values return a validation error.
+  - `autoplay` (bool, default `false`): when true, play the audio locally after synthesis (macOS `afplay`). Replaces `SUPERTONE_MCP_AUTOPLAY` (default changed `true`→`false`).
+  - `streaming` (bool, default `false`): `false` uses one-shot `create_speech_async`; `true` uses `stream_speech_async`. **Streaming is only supported by `model=sona_speech_1`.**
+  - `model` (str, default `sona_speech_2_flash`): one of the 7 SDK 0.2.3 models — `sona_speech_1`, `sona_speech_2`, `sona_speech_2_flash`, `sona_speech_2t`, `sona_speech_3t`, `supertonic_api_1`, `supertonic_api_3`.
+  - `include_phonemes` (bool, default `false`): return phoneme timing data with the audio (SDK 0.2.3 field).
+  - `normalized_text` (str, optional): pre-normalized text; effective only for `sona_speech_2`/`sona_speech_2_flash` (ignored by other models).
 - **Acceptance Criteria:**
   - The tool is registered in the MCP server and discoverable by MCP clients.
-  - The tool calls the Supertone API with correct headers (`x-sup-api-key`) and parameters.
-  - The audio binary stream from the API is written to a file in the output directory.
-  - The returned result is a text message containing the absolute file path and duration in seconds.
-  - The file is named with a timestamp and unique identifier (e.g., `2026-03-13_abc123.mp3`).
+  - The tool calls the Supertone API (via the SDK) with correct authentication and parameters.
+  - The audio from the API is returned per `output_mode` (file path for `files`, MCP audio resource for `resources`, both for `both`).
+  - For `files`/`both`, the file is named with a timestamp and unique identifier (e.g., `2026-03-13_abc123.mp3`) and the returned text includes the absolute path and duration in seconds.
+  - `streaming=true` with any model other than `sona_speech_1` returns the validation error `Streaming is only supported by model "sona_speech_1" (received: "{model}"). Set streaming=false or use sona_speech_1.` BEFORE any SDK call (fail-fast).
+  - An invalid `output_mode` (not `files`/`resources`/`both`) returns a validation error and makes no API call.
 - **Dependencies:** FR-003 (authentication).
 
 #### FR-002: `list_voices` MCP Tool — **REMOVED in v0.2** (replaced by FR-012 `search_voice`)
@@ -257,6 +313,38 @@
   - NO confirm gate is enforced in v0.2. The tool description text MUST warn the user this is irreversible (UX spec).
 - **Dependencies:** FR-003.
 
+### Feature Area: SDK 0.2.3 Surface Expansion (v0.3)
+
+#### FR-020: `get_custom_voice` MCP Tool
+- **Description:** Expose an MCP tool named `get_custom_voice` that fetches the detail of a single custom (cloned) voice via `custom_voices.get_custom_voice_async`. (Deferred in v0.2; promoted in v0.3 because SDK 0.2.3 provides the method.)
+- **Priority:** Should
+- **Parameters:** `voice_id` (required).
+- **Acceptance Criteria:**
+  - Returns a plain-text block including voice_id, name, description, and created_at (when available).
+  - Returns `voice_id must not be empty.` if input is empty/whitespace (no API call).
+  - Maps API errors per FR-007.
+- **Dependencies:** FR-003.
+
+#### FR-021: `get_usage_history` MCP Tool
+- **Description:** Expose an MCP tool named `get_usage_history` that retrieves usage history via `usage.get_usage_async`. Paging uses SDK defaults.
+- **Priority:** Should
+- **Parameters:** All optional (within the SDK 0.2.3 period/paging parameter range).
+- **Acceptance Criteria:**
+  - Returns a plain-text summary of usage by period (e.g., character/request counts).
+  - Returns a clear "no usage" message (not an error) when the history is empty.
+  - Maps API errors per FR-007.
+- **Dependencies:** FR-003.
+
+#### FR-022: `get_voice_usage` MCP Tool
+- **Description:** Expose an MCP tool named `get_voice_usage` that retrieves usage for a specific voice via `usage.get_voice_usage_async`.
+- **Priority:** Should
+- **Parameters:** `voice_id` (required).
+- **Acceptance Criteria:**
+  - Returns a plain-text usage summary for the given voice.
+  - Returns `voice_id must not be empty.` if input is empty/whitespace (no API call).
+  - Maps API errors per FR-007.
+- **Dependencies:** FR-003.
+
 ### Feature Area: Configuration and Authentication
 
 #### FR-003: API Key Authentication
@@ -281,13 +369,13 @@
 ### Feature Area: Input Validation
 
 #### FR-005: Text Length Validation
-- **Description:** Validate that input text does not exceed 300 characters.
+- **Description:** Validate that input text is non-empty. (v0.1/v0.2 enforced a 300-character hard cap; v0.3 RELAXES this — see below.)
 - **Priority:** Must
 - **Acceptance Criteria:**
-  - Given text with exactly 300 characters, the tool proceeds normally.
-  - Given text with 301+ characters, the tool returns an error: "Text exceeds the maximum length of 300 characters (received: {N}). Please shorten or split the text manually."
   - Given an empty string, the tool returns an error: "Text must not be empty."
-  - The system must NOT automatically split text that exceeds 300 characters.
+  - **(v0.3 update)** The MCP layer no longer hard-rejects text over 300 characters for `text_to_speech` or `predict_duration`. Long text is delegated to the SDK's internal auto-chunking (`_auto_chunk_text_async`), which splits, synthesizes in parallel, and concatenates the audio.
+  - Tool descriptions note that very long inputs increase credit consumption and latency proportionally.
+- **v0.3 change:** The prior behavior ("must NOT automatically split text > 300 chars; return a too-long error") is reversed. The `TEXT_MAX_LENGTH` constant may remain for reference but is no longer enforced as a hard cap.
 - **Dependencies:** FR-001.
 
 #### FR-006: Parameter Validation
@@ -404,6 +492,14 @@
 #### NFR-008: Async HTTP
 - **Description:** HTTP calls to the Supertone API must be asynchronous.
 - **Measurable Target:** Uses `httpx.AsyncClient` for all API calls. No blocking I/O on the event loop.
+- **Priority:** Should
+
+#### NFR-009: Behavior Controlled by Parameters, Not Env Vars (v0.3)
+- **Description:** All tool *behavior* must be controllable via per-call parameters; environment variables are reserved for authentication and stable defaults only. The SDK dependency must be version-pinned so SDK additions cannot silently desync validation.
+- **Measurable Target:**
+  - Zero behavior-control environment variables (auth/default-value env vars excepted). Specifically, `SUPERTONE_MCP_OUTPUT_MODE` and `SUPERTONE_MCP_AUTOPLAY` are removed and replaced by the `output_mode`/`autoplay` parameters.
+  - Retained env vars are limited to `SUPERTONE_API_KEY` (auth), `SUPERTONE_MCP_VOICE_ID` (default voice), and `SUPERTONE_OUTPUT_DIR` (save directory).
+  - `pyproject.toml` pins `supertone>=0.2.3,<0.3`; validated SDK version is 0.2.3.
 - **Priority:** Should
 
 ---

@@ -24,11 +24,19 @@
 | ISSUE-013 | Update PRD/docs for v0.2 (voice discovery + cloning) | P0 | 0.5d | none | done |
 | ISSUE-014 | Extend SupertoneClient with voice discovery methods | P0 | 0.5d | ISSUE-013 | done |
 | ISSUE-015 | Replace `list_voices` with `search_voice` tool (breaking) | P1 | 0.5d | ISSUE-014 | done |
-| ISSUE-016 | Add `get_voice` + `get_credit_balance` tools | P1 | 0.5d | ISSUE-014 | backlog |
+| ISSUE-016 | Add `get_voice` + `get_credit_balance` tools | P1 | 0.5d | ISSUE-014 | done |
 | ISSUE-017 | Add `preview_voice` tool (returns sample URLs) | P1 | 0.5d | ISSUE-014, ISSUE-016 | done |
 | ISSUE-018 | Add `predict_duration` tool (client + handler) | P1 | 0.5d | ISSUE-014 | done |
 | ISSUE-019 | Add `clone_voice` tool (single file ≤3MB) | P1 | 1d | ISSUE-014 | done |
-| ISSUE-020 | Custom voice CRUD tools (search/edit/delete) | P1 | 1d | ISSUE-019 | backlog |
+| ISSUE-020 | Custom voice CRUD tools (search/edit/delete) | P1 | 1d | ISSUE-019 | done |
+| ISSUE-021 | SDK 0.2.3 sync: model enum + default + version pin | P0 | 0.5d | none | done |
+| ISSUE-022 | Remove behavior env vars → per-call output_mode/autoplay (BREAKING) | P1 | 1d | ISSUE-021 | done |
+| ISSUE-023 | Add streaming param + route synthesize vs stream + sona_speech_1-only validation | P1 | 1d | ISSUE-021, ISSUE-022 | done |
+| ISSUE-024 | Relax 300-char hard limit → delegate to SDK auto-chunk | P2 | 0.5d | ISSUE-022 | done |
+| ISSUE-025 | Expose include_phonemes + normalized_text TTS params | P2 | 0.5d | ISSUE-022 | done |
+| ISSUE-026 | New tool get_custom_voice | P2 | 0.5d | ISSUE-021 | done |
+| ISSUE-027 | New usage tools get_usage_history + get_voice_usage | P2 | 1d | ISSUE-021 | backlog |
+| ISSUE-028 | Docs/README reframe + env→param migration + 0.3.0 release | P2 | 1d | ISSUE-021..ISSUE-027 | backlog |
 
 ---
 
@@ -37,7 +45,7 @@
 - PRD-Ref: FR-009, FR-010
 - Priority: P0
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch:
 - GH-Issue:
@@ -79,7 +87,7 @@ Delete generated files and revert pyproject.toml changes.
 - PRD-Ref: FR-005, FR-006, FR-007, FR-008
 - Priority: P0
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch:
 - GH-Issue:
@@ -128,7 +136,7 @@ Remove models.py, constants.py, exceptions.py and their test files.
 - PRD-Ref: FR-001, FR-002, FR-003, FR-007
 - Priority: P0
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch:
 - GH-Issue:
@@ -187,7 +195,7 @@ Revert `supertone_client.py` and `tests/test_supertone_client.py`.
 - PRD-Ref: FR-003, FR-004, FR-005, FR-006, FR-008
 - Priority: P0
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch:
 - GH-Issue:
@@ -259,7 +267,7 @@ Revert changes to `tools.py` and `tests/test_tools.py`.
 - PRD-Ref: FR-001, FR-005, FR-006, FR-007, FR-008, US-001, US-003, US-004, US-005, US-006
 - Priority: P1
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch:
 - GH-Issue:
@@ -318,7 +326,7 @@ Revert text_to_speech handler code and related tests.
 - PRD-Ref: FR-002, FR-007, US-002, US-003, US-007
 - Priority: P1
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch:
 - GH-Issue:
@@ -364,7 +372,7 @@ Revert list_voices handler code and related tests.
 - PRD-Ref: FR-009, NFR-002
 - Priority: P1
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch:
 - GH-Issue:
@@ -416,7 +424,7 @@ Revert `server.py`, `__main__.py`, and `tests/test_server.py`.
 - PRD-Ref: FR-010, NFR-001
 - Priority: P1
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch:
 - GH-Issue:
@@ -456,7 +464,7 @@ Revert pyproject.toml metadata changes.
 - PRD-Ref: NFR-005, NFR-006
 - Priority: P1
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch:
 - GH-Issue:
@@ -496,7 +504,7 @@ Delete `.github/workflows/ci.yml`.
 - PRD-Ref: FR-009, NFR-001, NFR-002
 - Priority: P2
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch:
 - GH-Issue:
@@ -1022,6 +1030,380 @@ Revert client methods, tool handlers, server registrations, and tests.
 
 ---
 
+### ISSUE-021: SDK 0.2.3 sync: model enum + default + version pin
+- Track: platform
+- PRD-Ref: FR-001, US-015, NFR-009 (SDK 0.2.3)
+- Priority: P0
+- Estimate: 0.5d
+- Status: done
+- Owner: team-lead
+- Branch: issue/ISSUE-021-sdk-023-sync
+- GH-Issue: 31
+- PR: 32 (merged)
+- Depends-On: none
+
+#### Goal
+`constants.SUPPORTED_MODELS` matches the SDK 0.2.3 model enum (all 7 models), the default model is `sona_speech_2_flash`, and the `supertone` dependency is pinned to `>=0.2.3,<0.3` so future SDK additions cannot silently desync the validator.
+
+#### Scope (In/Out)
+- In: Add `sona_speech_3t` and `supertonic_api_3` to `SUPPORTED_MODELS` and the `Model` Literal in `constants.py`; change `DEFAULT_MODEL` from `sona_speech_1` to `sona_speech_2_flash`; pin `supertone>=0.2.3,<0.3` in `pyproject.toml`; update `validate_model` tests; correct the stale `text_to_speech` docstring text in `server.py` (`"sona_speech_1 (default, streaming)"`) to reflect the new default and the full 7-model list.
+- Out: streaming-vs-synthesize routing (ISSUE-023), env-var removal (ISSUE-022), new tools (ISSUE-026/027).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given `constants.SUPPORTED_MODELS`, when inspected, then it contains exactly the 7 SDK 0.2.3 models: `sona_speech_1`, `sona_speech_2`, `sona_speech_2_flash`, `sona_speech_2t`, `sona_speech_3t`, `supertonic_api_1`, `supertonic_api_3`
+- [ ] Given each of the 7 supported models, when `validate_model(model)` is called, then no error is raised
+- [ ] Given `validate_model("sona_speech_3t")` and `validate_model("supertonic_api_3")` (previously rejected), when called, then no error is raised
+- [ ] Given an unsupported model `"sona_speech_99"`, when `validate_model("sona_speech_99")` is called, then it raises `ValueError` with message `Invalid model: "sona_speech_99". Supported models: sona_speech_1, sona_speech_2, sona_speech_2_flash, sona_speech_2t, sona_speech_3t, supertonic_api_1, supertonic_api_3.`
+- [ ] Given `constants.DEFAULT_MODEL`, when inspected, then it equals `"sona_speech_2_flash"`
+- [ ] Given a mocked SDK and `text_to_speech(text="hi", model="sona_speech_3t", streaming=False)` (or `supertonic_api_3`), when called, then the client `synthesize` path is invoked with the corresponding SDK enum member and no validation error is returned
+- [ ] Given `pyproject.toml`, when inspected, then the `dependencies` list contains `"supertone>=0.2.3,<0.3"` (not the bare `"supertone"`)
+- [ ] Given the `text_to_speech` tool docstring in `server.py`, when inspected, then it no longer states `sona_speech_1 (default, streaming)` and lists all 7 models with `sona_speech_2_flash` as the default
+
+#### Implementation Notes
+- File: `src/supertone_mcp/constants.py` — extend `Model` Literal and `SUPPORTED_MODELS`; set `DEFAULT_MODEL = "sona_speech_2_flash"`.
+- File: `pyproject.toml` — change `"supertone"` to `"supertone>=0.2.3,<0.3"` in `[project] dependencies`.
+- File: `src/supertone_mcp/server.py` — fix the `model:` line in the `text_to_speech` docstring (lines ~48-50). Keep the streaming caveat for ISSUE-023.
+- `_MODEL_MAP` / `_PREDICT_MODEL_MAP` in `supertone_client.py` are already built dynamically from the SDK enum, so they already accept all 7 — no client change needed beyond confirming the maps resolve `sona_speech_3t` / `supertonic_api_3`.
+- Test files: `tests/test_tools.py` (validate_model), `tests/test_supertone_client.py` (enum-map resolution for the 2 new models).
+- Note: changing `DEFAULT_MODEL` to a non-streaming model is intentional and is the precondition for ISSUE-023's streaming default change — do NOT also change streaming routing here.
+
+#### Tests
+- [ ] Test `validate_model` passes for all 7 models (parametrized)
+- [ ] Test `validate_model` passes for `sona_speech_3t` and `supertonic_api_3` specifically (regression for the stale-list bug)
+- [ ] Test `validate_model` rejects an unknown model with the exact 7-model error string
+- [ ] Test `DEFAULT_MODEL == "sona_speech_2_flash"`
+- [ ] Test `_MODEL_MAP` and `_PREDICT_MODEL_MAP` contain `sona_speech_3t` and `supertonic_api_3` keys
+- [ ] Test `text_to_speech` with `model="supertonic_api_3"` (mocked client) does not return a validation error
+
+#### Rollback
+Revert `constants.py`, `pyproject.toml`, the `server.py` docstring edit, and the related tests.
+
+---
+
+### ISSUE-022: Remove behavior env vars → per-call output_mode/autoplay (BREAKING)
+- Track: platform
+- PRD-Ref: FR-001, FR3 (config), US-012, US-013, NFR-009
+- Priority: P1
+- Estimate: 1d
+- Status: done
+- Owner: -
+- Branch: issue/ISSUE-022-output-mode-autoplay-params
+- GH-Issue: #33
+- PR: #34
+- Depends-On: ISSUE-021
+
+#### Goal
+`text_to_speech` decides output mode and autoplay per call via the new `output_mode` and `autoplay` parameters; the behavior-control environment variables `SUPERTONE_MCP_OUTPUT_MODE` and `SUPERTONE_MCP_AUTOPLAY` are no longer read, and `autoplay` defaults to `false`.
+
+#### Scope (In/Out)
+- In: Add `output_mode` (str, default `files`) and `autoplay` (bool, default `false`) parameters to the `tools.text_to_speech` handler and to the `server.py` tool registration + docstrings; replace `resolve_output_mode()` (env read) with per-call validation of the `output_mode` argument; remove `resolve_autoplay()` and stop reading `SUPERTONE_MCP_AUTOPLAY`; remove `DEFAULT_AUTOPLAY` constant usage for env-driven behavior; keep the `files`/`resources`/`both` output logic but drive it from the parameter; update all tests that set those env vars.
+- Out: streaming routing (ISSUE-023), relaxed length (ISSUE-024), new TTS params (ISSUE-025).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given no `output_mode` argument, when `text_to_speech(text="hi")` is called against a mocked client, then it behaves as `files` mode (disk save + plain-text response) regardless of any `SUPERTONE_MCP_OUTPUT_MODE` env value
+- [ ] Given `output_mode="resources"`, when `text_to_speech(text="hi", output_mode="resources")` is called, then no file is written and `[AudioContent, TextContent]` is returned
+- [ ] Given `output_mode="both"`, when called, then a file is saved AND `[AudioContent, TextContent]` is returned with the file path in the metadata line
+- [ ] Given `output_mode="invalid"`, when called, then a validation error string is returned (e.g., `Invalid output mode: "invalid". Valid modes: files, resources, both.`) and no API call is made
+- [ ] Given `SUPERTONE_MCP_OUTPUT_MODE=resources` is set in the environment but `output_mode` is omitted, when `text_to_speech(text="hi")` is called, then the env var is ignored and `files` behavior is used
+- [ ] Given no `autoplay` argument, when `text_to_speech(text="hi")` is called, then audio is NOT played (autoplay defaults to false), even if `SUPERTONE_MCP_AUTOPLAY=true` is set in the environment
+- [ ] Given `autoplay=true` on macOS, when `text_to_speech(text="hi", autoplay=True)` is called, then `_autoplay(...)` is invoked
+- [ ] Given the source, when `tools.py` is inspected, then `resolve_output_mode()` and `resolve_autoplay()` no longer read environment variables for behavior control (the functions are removed or refactored to validate the parameter)
+
+#### Implementation Notes
+- File: `src/supertone_mcp/tools.py` — `text_to_speech` signature gains `output_mode: str | None = None` (resolved to `DEFAULT_OUTPUT_MODE` when None) and `autoplay: bool = False`. Replace the `resolve_output_mode()` env read with a `validate_output_mode(mode)` helper that validates the passed value against `VALID_OUTPUT_MODES`. Remove `resolve_autoplay()` and call `_autoplay(...)` only when the `autoplay` argument is truthy.
+- File: `src/supertone_mcp/constants.py` — keep `VALID_OUTPUT_MODES` / `DEFAULT_OUTPUT_MODE`; remove `DEFAULT_AUTOPLAY` (or leave only as a documented `False` default in the handler signature — do NOT use it to drive env behavior).
+- File: `src/supertone_mcp/server.py` — add `output_mode` and `autoplay` params to the `text_to_speech` wrapper + docstring; document that these REPLACE the removed env vars and that `autoplay` now defaults to `false`.
+- BREAKING: anyone relying on `SUPERTONE_MCP_OUTPUT_MODE` / `SUPERTONE_MCP_AUTOPLAY` must migrate to the params (covered in ISSUE-028 migration guide). Optionally emit a one-time stderr warning if either env var is set.
+- Test files: `tests/test_tools.py`, `tests/test_server.py` — replace env-var-based output-mode/autoplay tests with parameter-based tests; assert env vars are ignored.
+
+#### Tests
+- [ ] Test default (no args) → files behavior, env `SUPERTONE_MCP_OUTPUT_MODE` ignored
+- [ ] Test `output_mode="resources"` → no file, AudioContent returned
+- [ ] Test `output_mode="both"` → file saved + AudioContent returned
+- [ ] Test `output_mode="invalid"` → validation error, no API call
+- [ ] Test `autoplay` defaults to false (no `_autoplay` call) even with `SUPERTONE_MCP_AUTOPLAY=true` set
+- [ ] Test `autoplay=True` triggers `_autoplay` (patched/mock subprocess)
+- [ ] Test server registers `text_to_speech` with `output_mode` and `autoplay` params in the schema
+
+#### Rollback
+Revert `tools.py`, `constants.py`, `server.py`, and the updated tests; restore `resolve_output_mode()`/`resolve_autoplay()` env reads.
+
+---
+
+### ISSUE-023: Add streaming param + route synthesize vs stream + sona_speech_1-only validation
+- Track: product
+- PRD-Ref: FR-001, US-014, US-015
+- Priority: P1
+- Estimate: 1d
+- Status: done
+- Owner: -
+- Branch: issue/ISSUE-023-streaming-routing
+- GH-Issue: 35
+- PR: 36
+- Depends-On: ISSUE-021, ISSUE-022
+
+#### Goal
+`text_to_speech` accepts a per-call `streaming` parameter (default `false`) that routes to the one-shot `client.synthesize` path by default and to `client.synthesize_stream` when `true`, with fail-fast validation that rejects `streaming=true` for any model other than `sona_speech_1` before any SDK call.
+
+#### Scope (In/Out)
+- In: Add `streaming: bool = False` to the `tools.text_to_speech` handler + `server.py` registration/docstring; wire the currently-unused `client.synthesize()` (one-shot) path through the existing `output_mode` (files/resources/both) and autoplay logic; route to `client.synthesize_stream()` when `streaming=True`; add cross-field validation per locked decision #3.
+- Out: model enum sync (ISSUE-021), env removal (ISSUE-022), length relax (ISSUE-024).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given default arguments (`model` defaults to `sona_speech_2_flash`, `streaming` defaults to `False`), when `text_to_speech(text="hi")` is called against a mocked client, then `client.synthesize` is called (NOT `synthesize_stream`) and a `files`-mode response is returned
+- [ ] Given `streaming=True` and `model="sona_speech_2_flash"` (or any non-`sona_speech_1` model), when `text_to_speech(text="hi", streaming=True)` is called, then the exact validation error `Streaming is only supported by model "sona_speech_1" (received: "sona_speech_2_flash"). Set streaming=false or use sona_speech_1.` is returned and NEITHER `synthesize` NOR `synthesize_stream` is called
+- [ ] Given `streaming=True` and `model="sona_speech_1"`, when `text_to_speech(text="hi", model="sona_speech_1", streaming=True)` is called, then `client.synthesize_stream` is invoked and the file/resource output is produced from the streamed chunks
+- [ ] Given `streaming=False` and `output_mode="resources"`, when called, then `client.synthesize` is used and `[AudioContent, TextContent]` is returned from the one-shot bytes (no file written)
+- [ ] Given `streaming=False`, when the one-shot path returns a duration from the SDK (`synthesize` third tuple element), then that duration is preferred over the mutagen-derived value when present
+- [ ] Given the server, when the `text_to_speech` schema is inspected, then `streaming` (boolean, default false) is present and its description states it requires `model=sona_speech_1`
+
+#### Implementation Notes
+- File: `src/supertone_mcp/tools.py` — `text_to_speech` gains `streaming: bool = False`. Add a validation step (after `validate_model`) of the form: `if streaming and model != "sona_speech_1": return 'Streaming is only supported by model "sona_speech_1" (received: "{model}"). Set streaming=false or use sona_speech_1.'`. When `streaming=False`, call `audio_bytes, content_type, sdk_duration = await client.synthesize(...)`, write to disk if `needs_file`, and collect bytes for resources/both. When `streaming=True`, keep the existing `synthesize_stream` chunk loop.
+- `client.synthesize` already returns `(bytes, content_type, duration|None)`; reuse `format_tts_response` / `format_tts_metadata`. Prefer `sdk_duration` when not None, else `calculate_duration(file_path)`.
+- File: `src/supertone_mcp/server.py` — add `streaming` to the wrapper + docstring (note default false, sona_speech_1-only).
+- The streaming-model error must be raised BEFORE constructing/calling the client (fail-fast), alongside the other `validate_*` checks.
+- Test files: `tests/test_tools.py`, `tests/test_server.py`.
+
+#### Tests
+- [ ] Test default path calls `synthesize` (mock), not `synthesize_stream`
+- [ ] Test `streaming=True` + `sona_speech_2_flash` returns the exact error string and calls neither SDK method
+- [ ] Test `streaming=True` + `sona_speech_1` calls `synthesize_stream`
+- [ ] Test `streaming=False` + `output_mode="resources"` returns AudioContent from one-shot bytes, no file
+- [ ] Test `streaming=False` prefers SDK-provided duration when present
+- [ ] Test server schema includes `streaming` boolean with sona_speech_1 note
+
+#### Rollback
+Revert `tools.py` routing changes, `server.py` registration, and the tests; restore the streaming-only behavior.
+
+---
+
+### ISSUE-024: Relax 300-char hard limit → delegate to SDK auto-chunk
+- Track: product
+- PRD-Ref: FR-001, FR-016, FR-005 (relaxed)
+- Priority: P2
+- Estimate: 0.5d
+- Status: done
+- Owner: -
+- Branch: issue/ISSUE-024-relax-text-length
+- GH-Issue: #37
+- PR: #38
+- Depends-On: ISSUE-022
+
+#### Goal
+`text_to_speech` and `predict_duration` no longer hard-reject text over 300 characters; long text is delegated to the SDK's internal auto-chunking, while empty-text validation is retained.
+
+#### Scope (In/Out)
+- In: Remove the `validate_text_max_length` hard rejection from `predict_duration` (and confirm `text_to_speech` does not call it); keep `validate_text` (non-empty); update the `text_to_speech` and `predict_duration` tool descriptions/docstrings to note that long text is auto-chunked and that credit/latency scale with length; update/remove tests asserting the 300-char rejection.
+- Out: Soft-warning UI, streaming routing, new params.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given text of 500 characters, when `text_to_speech(text=long_text)` is called against a mocked client, then no length-validation error is returned and the SDK synthesize path is invoked
+- [ ] Given text of 500 characters, when `predict_duration(text=long_text)` is called against a mocked client, then no length-validation error is returned and the SDK `predict_duration` path is invoked
+- [ ] Given empty text `""`, when `text_to_speech(text="")` is called, then `Text must not be empty.` is returned without an API call
+- [ ] Given empty text `""`, when `predict_duration(text="")` is called, then `Text must not be empty.` is returned without an API call
+- [ ] Given the `predict_duration` tool docstring/description, when inspected, then it no longer claims a 300-character limit and instead notes auto-chunking with proportional credit/latency
+- [ ] Given the `text_to_speech` tool description, when inspected, then it notes long text is automatically split (auto-chunked) and credit/latency scale with length
+
+#### Implementation Notes
+- File: `src/supertone_mcp/tools.py` — remove the `validate_text_max_length(text)` call from `predict_duration` (lines ~917-918); leave `validate_text(text)` in place. `text_to_speech` already does not call `validate_text_max_length`, so just confirm and update its description. Consider removing `validate_text_max_length` entirely if no other caller remains, or keep it as a dead helper documented as unused — prefer removal.
+- File: `src/supertone_mcp/server.py` — update the `predict_duration` description (remove "applies the same 300-character limit") and the `predict_duration` docstring `text:` arg line ("Maximum 300 characters (no auto-chunking...)") to reflect auto-chunking; update `text_to_speech` description if needed.
+- Note: `TEXT_MAX_LENGTH` constant may remain for reference but is no longer enforced as a hard cap.
+- Test files: `tests/test_tools.py` — remove/adjust the 301-char rejection tests for both handlers; add long-text pass-through tests.
+
+#### Tests
+- [ ] Test `text_to_speech` with 500-char text passes validation and calls the SDK (mock)
+- [ ] Test `predict_duration` with 500-char text passes validation and calls the SDK (mock)
+- [ ] Test both handlers still reject empty text with `Text must not be empty.`
+- [ ] Test removal/adjustment of the prior 301-char rejection assertions
+
+#### Rollback
+Re-add `validate_text_max_length` calls and restore the 300-char rejection tests and descriptions.
+
+---
+
+### ISSUE-025: Expose include_phonemes + normalized_text TTS params
+- Track: product
+- PRD-Ref: FR-001, US-014
+- Priority: P2
+- Estimate: 0.5d
+- Status: done
+- Owner: -
+- Branch: issue/ISSUE-025-tts-phoneme-params
+- GH-Issue: #39
+- PR: #40
+- Depends-On: ISSUE-022
+
+#### Goal
+`text_to_speech` exposes the SDK 0.2.3 `include_phonemes` (bool, default false) and `normalized_text` (str, optional) parameters, passing them through to the client/SDK, with `normalized_text` documented as effective only for `sona_speech_2`/`sona_speech_2_flash`.
+
+#### Scope (In/Out)
+- In: Add `include_phonemes: bool = False` and `normalized_text: str | None = None` to the `tools.text_to_speech` handler, the `client.synthesize` (and, where applicable, `synthesize_stream`) signatures, and the `server.py` registration/docstrings; pass both through to the SDK call.
+- Out: Surfacing/parsing the returned phoneme timing data into the response (pass-through only for now), other params.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given `include_phonemes=True`, when `text_to_speech(text="hi", include_phonemes=True)` is called against a mocked client, then the client/SDK synthesize call receives `include_phonemes=True`
+- [ ] Given `include_phonemes` omitted, when `text_to_speech(text="hi")` is called, then the synthesize call receives `include_phonemes=False` (default)
+- [ ] Given `normalized_text="안녕하세요"` with `model="sona_speech_2_flash"`, when called, then the synthesize call receives `normalized_text="안녕하세요"`
+- [ ] Given `normalized_text` omitted, when called, then `normalized_text` is not sent / sent as None (SDK default)
+- [ ] Given the server, when the `text_to_speech` schema is inspected, then `include_phonemes` (boolean, default false) and `normalized_text` (string, optional) are present, and `normalized_text` documentation states it applies only to `sona_speech_2`/`sona_speech_2_flash`
+
+#### Implementation Notes
+- File: `src/supertone_mcp/supertone_client.py` — add `include_phonemes: bool = False` and `normalized_text: str | None = None` to `synthesize` (and `synthesize_stream` if streaming supports them) and forward to the SDK `create_speech_async` / `stream_speech_async` calls (SDK 0.2.3 fields).
+- File: `src/supertone_mcp/tools.py` — add both params to `text_to_speech`, pass through to `client.synthesize` / `synthesize_stream`.
+- File: `src/supertone_mcp/server.py` — add both params + docstrings; document the model constraint for `normalized_text` (no client-side rejection — other models ignore it per SDK).
+- Test files: `tests/test_supertone_client.py` (params forwarded to SDK), `tests/test_tools.py` (passthrough), `tests/test_server.py` (schema).
+
+#### Tests
+- [ ] Test `include_phonemes=True` forwarded to SDK synthesize call
+- [ ] Test `include_phonemes` defaults to False when omitted
+- [ ] Test `normalized_text` forwarded when provided
+- [ ] Test `normalized_text` omitted/None when not provided
+- [ ] Test server schema includes both params with correct defaults and the model note
+
+#### Rollback
+Revert the client signature, `tools.py`, `server.py`, and tests.
+
+---
+
+### ISSUE-026: New tool get_custom_voice
+- Track: product
+- PRD-Ref: FR-020, US-016
+- Priority: P2
+- Estimate: 0.5d
+- Status: done
+- Owner: -
+- Branch: issue/ISSUE-026-get-custom-voice
+- GH-Issue: #41
+- PR: #42
+- Depends-On: ISSUE-021
+
+#### Goal
+A new `get_custom_voice(voice_id)` tool returns the detail of a single custom (cloned) voice by wrapping `custom_voices.get_custom_voice_async`, with empty-`voice_id` validation.
+
+#### Scope (In/Out)
+- In: New `async get_custom_voice(voice_id) -> CustomVoiceDict` (or detail dict) method on `SupertoneClient` wrapping `custom_voices.get_custom_voice_async`; new `async get_custom_voice(voice_id) -> str` tool handler + `format_custom_voice_detail(...)` formatter in `tools.py`; `server.py` registration; empty `voice_id` validation; tests.
+- Out: Listing/searching custom voices (already in ISSUE-020), usage tools (ISSUE-027).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a mocked client returning a custom voice detail, when `get_custom_voice("cv_abc123")` is called, then the response includes voice_id, name, description (and created_at when present)
+- [ ] Given `get_custom_voice("")` or whitespace, when called, then `voice_id must not be empty.` is returned without an API call
+- [ ] Given a mocked client raising `SupertoneAuthError`, when `get_custom_voice("cv1")` is called, then `Authentication failed. Please verify your SUPERTONE_API_KEY.` is returned
+- [ ] Given a mocked client raising `SupertoneConnectionError`, when called, then the connection error string is returned
+- [ ] Given the server, when `tools/list` is queried, then `get_custom_voice` is registered with required param `voice_id`
+
+#### Implementation Notes
+- File: `src/supertone_mcp/supertone_client.py` — add `get_custom_voice(voice_id)` wrapping `self._sdk.custom_voices.get_custom_voice_async(voice_id=voice_id)`; map the response into a `CustomVoiceDict` (voice_id, name, optional description, optional created_at) using the same `_handle_sdk_errors` try/except pattern as the other wrappers.
+- File: `src/supertone_mcp/tools.py` — add the handler (validate non-empty `voice_id` first, mirror `get_voice` error handling) and a `format_custom_voice_detail(detail)` formatter (reuse `format_custom_voice_list` style fields).
+- File: `src/supertone_mcp/server.py` — register `get_custom_voice` with a description (single custom voice detail by voice_id).
+- Test files: `tests/test_supertone_client.py`, `tests/test_tools.py`, `tests/test_server.py`.
+
+#### Tests
+- [ ] Test client wrapper maps SDK response to dict and maps errors
+- [ ] Test handler happy path returns formatted detail
+- [ ] Test handler empty/whitespace voice_id returns validation error, no API call
+- [ ] Test handler auth/rate/5xx/connection errors are formatted
+- [ ] Test server registers `get_custom_voice` with `voice_id` required
+
+#### Rollback
+Revert the client method, tool handler, formatter, server registration, and tests.
+
+---
+
+### ISSUE-027: New usage tools get_usage_history + get_voice_usage
+- Track: product
+- PRD-Ref: FR-021, FR-022, US-017
+- Priority: P2
+- Estimate: 1d
+- Status: done
+- Owner: -
+- Branch: issue/ISSUE-027-usage-tools
+- GH-Issue: 43
+- PR: https://github.com/supertone-inc/supertone-mcp/pull/44
+- Depends-On: ISSUE-021
+
+#### Goal
+Two new tools expose usage data: `get_usage_history()` wraps `usage.get_usage_async` and `get_voice_usage(voice_id)` wraps `usage.get_voice_usage_async`, each returning a formatted plain-text usage summary.
+
+#### Scope (In/Out)
+- In: New `async get_usage_history(...) -> dict|list` and `async get_voice_usage(voice_id) -> dict` methods on `SupertoneClient`; two tool handlers (`get_usage_history`, `get_voice_usage`) + formatters in `tools.py`; `server.py` registration for both; empty-`voice_id` validation for `get_voice_usage`; tests.
+- Out: Cost-in-currency conversion, charting, custom date-range UI beyond what the SDK exposes.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a mocked client returning a usage history payload, when `get_usage_history()` is called, then a formatted plain-text summary (e.g., per-period character/request counts) is returned
+- [ ] Given a mocked client returning empty usage, when `get_usage_history()` is called, then a clear "no usage" style message is returned (not an error)
+- [ ] Given a mocked client returning voice usage, when `get_voice_usage("v1")` is called, then a formatted summary for that voice is returned
+- [ ] Given `get_voice_usage("")` or whitespace, when called, then `voice_id must not be empty.` is returned without an API call
+- [ ] Given any of the two tools and a mocked `SupertoneAuthError`, when called, then `Authentication failed. Please verify your SUPERTONE_API_KEY.` is returned
+- [ ] Given the server, when `tools/list` is queried, then both `get_usage_history` and `get_voice_usage` are registered (the latter with required `voice_id`)
+
+#### Implementation Notes
+- File: `src/supertone_mcp/supertone_client.py` — add `get_usage_history(...)` wrapping `self._sdk.usage.get_usage_async(...)` and `get_voice_usage(voice_id)` wrapping `self._sdk.usage.get_voice_usage_async(voice_id=voice_id)`; reuse the `_handle_sdk_errors` try/except pattern. Pass through whatever optional period/paging params the SDK 0.2.3 signature exposes (keep them all optional).
+- File: `src/supertone_mcp/tools.py` — add `format_usage_history(...)` and `format_voice_usage(...)` formatters and the two handlers (mirror `get_credit_balance` for the no-arg one; validate non-empty `voice_id` for the voice one).
+- File: `src/supertone_mcp/server.py` — register both tools with descriptions.
+- Test files: `tests/test_supertone_client.py`, `tests/test_tools.py`, `tests/test_server.py`.
+
+#### Tests
+- [ ] Test `get_usage_history` client wrapper forwards optional params and maps errors
+- [ ] Test `get_usage_history` handler happy path formats the summary
+- [ ] Test `get_usage_history` handler empty-usage message
+- [ ] Test `get_voice_usage` client wrapper maps response + errors
+- [ ] Test `get_voice_usage` handler happy path formats the summary
+- [ ] Test `get_voice_usage` empty/whitespace voice_id returns validation error, no API call
+- [ ] Test both handlers map auth/rate/5xx/connection errors
+- [ ] Test server registers both tools with correct schemas
+
+#### Rollback
+Revert the two client methods, two handlers, two formatters, server registrations, and tests.
+
+---
+
+### ISSUE-028: Docs/README reframe + env→param migration + 0.3.0 release
+- Track: product
+- PRD-Ref: PRD §1 (v0.3 pivot), FR-001, FR3 (config), FR-020, FR-021, FR-022, US-012..US-017
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner: -
+- Branch: -
+- GH-Issue: -
+- PR: -
+- Depends-On: ISSUE-021, ISSUE-022, ISSUE-023, ISSUE-024, ISSUE-025, ISSUE-026, ISSUE-027
+- Manual: true
+
+#### Goal
+The README and release metadata reflect the v0.3 "composable SDK toolkit" framing, document the env→param migration (output_mode/autoplay, autoplay & streaming default changes, DEFAULT_MODEL change), register the new tools, and ship version 0.3.0.
+
+#### Scope (In/Out)
+- In: Reframe README intro to "composable SDK toolkit"; update the environment variable table (remove `SUPERTONE_MCP_OUTPUT_MODE`/`SUPERTONE_MCP_AUTOPLAY`, keep `SUPERTONE_API_KEY`/`SUPERTONE_MCP_VOICE_ID`/`SUPERTONE_OUTPUT_DIR`); add a migration guide (old env → new param mapping; `autoplay` default `true`→`false`; `streaming` default now `false`; `DEFAULT_MODEL` `sona_speech_1`→`sona_speech_2_flash`); document the 3 new tools (`get_custom_voice`, `get_usage_history`, `get_voice_usage`) and new TTS params; update `server.json` description; bump version to `0.3.0` in `pyproject.toml` and `src/supertone_mcp/__init__.py`; update MCP registry metadata.
+- Out: PRD edits (PRD is already reframed to v0.3 — this issue only references it), actual `mcp-publisher publish` run (handled by the release CI job / manual release step).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the README, when inspected, then the intro frames the server as a composable SDK toolkit (LLM assembles tools), not "TTS the LLM output"
+- [ ] Given the README env var table, when inspected, then `SUPERTONE_MCP_OUTPUT_MODE` and `SUPERTONE_MCP_AUTOPLAY` are no longer listed as supported, and a migration note maps them to the `output_mode`/`autoplay` parameters
+- [ ] Given the README migration section, when inspected, then it states `autoplay` now defaults to `false`, `streaming` now defaults to `false`, and the default model is `sona_speech_2_flash`
+- [ ] Given the README tool list, when inspected, then `get_custom_voice`, `get_usage_history`, and `get_voice_usage` are documented along with the new `output_mode`/`autoplay`/`streaming`/`include_phonemes`/`normalized_text` parameters
+- [ ] Given `pyproject.toml` and `src/supertone_mcp/__init__.py`, when inspected, then the version is `0.3.0`
+- [ ] Given `server.json`, when inspected, then its `description` reflects the v0.3 composable-toolkit framing and references the expanded tool set
+- [ ] Given the README, when inspected, then it retains the `mcp-name: io.github.supertone-inc/supertone-mcp` ownership marker
+
+#### Implementation Notes
+- Files: `README.md`, `server.json`, `pyproject.toml` (version), `src/supertone_mcp/__init__.py` (`__version__`).
+- PRD/registry files: PRD.md is already at v0.3 — do NOT rewrite it; only cross-reference. `server.json` and the PyPI description carry the registry metadata (ownership marker + description).
+- Keep the migration guide concise and developer-focused; show a before/after MCP client config plus before/after tool-call examples for output_mode/autoplay/streaming.
+- Release: bump version, ensure CI test matrix passes, tag `v0.3.0` to trigger the existing `publish` + `publish-registry` jobs.
+- This is a docs/release issue — no behavior code changes beyond version bumps.
+
+#### Tests
+- [ ] README renders correctly on GitHub and all code fences are tagged (manual verification)
+- [ ] `server.json` is valid against its schema (validate via check-jsonschema)
+- [ ] Version strings in `pyproject.toml` and `__init__.py` agree at `0.3.0`
+- [ ] `uv build` succeeds and the built artifact reports version 0.3.0 (manual verification)
+
+#### Rollback
+Revert README/server.json/version changes; if a broken 0.3.0 is published, yank it on PyPI (`uv publish --yank 0.3.0`).
+
+---
+
 ## Dependency Graph
 
 ```
@@ -1083,6 +1465,30 @@ ISSUE-013 (Docs sync — PRD/requirements/ux_spec)
 - After ISSUE-016: ISSUE-017 unlocks
 - After ISSUE-019: ISSUE-020 unlocks
 
+### v0.3 Sub-Graph (ISSUE-021 onwards — concept pivot)
+
+```
+ISSUE-021 (SDK 0.2.3 sync: model enum + DEFAULT_MODEL + version pin)
+  |
+  +-- ISSUE-022 (Remove behavior env vars → output_mode/autoplay params)  [BREAKING]
+  |     |
+  |     +-- ISSUE-023 (streaming param + synthesize/stream routing + sona_speech_1 validation)  [needs 021 + 022]
+  |     +-- ISSUE-024 (relax 300-char hard limit → SDK auto-chunk)
+  |     +-- ISSUE-025 (include_phonemes + normalized_text params)
+  |
+  +-- ISSUE-026 (new tool get_custom_voice)            [needs 021, parallel with 022 chain]
+  +-- ISSUE-027 (new usage tools get_usage_history + get_voice_usage)  [needs 021]
+        |
+ISSUE-028 (docs/README reframe + env→param migration + 0.3.0 release)  [needs 021..027]
+```
+
+**v0.3 critical path:** 021 -> 022 -> 023 -> 028
+
+**v0.3 parallelism:**
+- After ISSUE-021: ISSUE-022, ISSUE-026, ISSUE-027 can run in parallel
+- After ISSUE-022: ISSUE-023, ISSUE-024, ISSUE-025 can run in parallel
+- ISSUE-028 is the release gate; it waits on all of ISSUE-021..ISSUE-027
+
 ---
 
 ## Requirement Coverage Check
@@ -1127,6 +1533,18 @@ ISSUE-013 (Docs sync — PRD/requirements/ux_spec)
 | US-009 (check credits before TTS) | ISSUE-016 |
 | US-010 (predict duration) | ISSUE-018 |
 | US-011 (clone & manage custom voices) | ISSUE-019, ISSUE-020 |
+| FR-001 (v0.3 params: output_mode/autoplay/streaming/model/include_phonemes/normalized_text + relaxed length) | ISSUE-021, ISSUE-022, ISSUE-023, ISSUE-024, ISSUE-025 |
+| FR-020 (get_custom_voice) | ISSUE-026 |
+| FR-021 (get_usage_history) | ISSUE-027 |
+| FR-022 (get_voice_usage) | ISSUE-027 |
+| NFR-009 (behavior via params not env; SDK version pin) | ISSUE-021, ISSUE-022 |
+| US-012 (per-call output mode) | ISSUE-022 |
+| US-013 (per-call autoplay) | ISSUE-022 |
+| US-014 (per-call streaming + one-shot TTS) | ISSUE-023, ISSUE-024, ISSUE-025 |
+| US-015 (per-call model selection, 7 models) | ISSUE-021, ISSUE-023 |
+| US-016 (single custom voice detail) | ISSUE-026 |
+| US-017 (usage history + voice usage) | ISSUE-027 |
+| v0.3 docs/release (composable toolkit framing + migration) | ISSUE-028 |
 
 **Orphaned requirements:** None. All FRs, user stories, and NFRs are covered.
 

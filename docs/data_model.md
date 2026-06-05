@@ -162,6 +162,43 @@ class AppConfig:
 | output_dir | str | NOT NULL, valid directory path | ~/supertone-tts-output/ | Resolved and expanded absolute path |
 | base_url | str | NOT NULL, HTTPS URL | https://api.supertoneapi.com | Hardcoded, not user-configurable (SSRF prevention) |
 
+### v0.3 additions (concept pivot)
+
+The v0.3 pivot adds per-call parameters to the `text_to_speech` request surface and two usage response shapes. No persistent storage is introduced.
+
+**`text_to_speech` parameter additions** (request-shape only; not persisted):
+
+| Field | Type | Constraints | Default | Description |
+|-------|------|-------------|---------|-------------|
+| output_mode | Literal["files","resources","both"] | enum check; replaces env var | "files" | How audio is returned (per-call) |
+| autoplay | bool | — | False | Play locally after synthesis (per-call; default flipped from old env default) |
+| streaming | bool | requires model=="sona_speech_1" when True | False | One-shot (`create_speech_async`) vs streaming (`stream_speech_async`) |
+| model | str | one of 7 SDK 0.2.3 models | "sona_speech_2_flash" | TTS model (default changed from sona_speech_1) |
+| include_phonemes | bool | — | False | Return phoneme timing data (SDK 0.2.3) |
+| normalized_text | str or None | effective only for sona_speech_2/2_flash | None | Pre-normalized text (SDK 0.2.3) |
+
+> **Note:** `text` no longer carries a 300-char hard cap in v0.3 (FR-005 relaxed). The only retained constraint is non-empty. Long text is delegated to the SDK auto-chunk.
+
+**Usage response shapes** (mapped from SDK `usage.get_usage_async` / `usage.get_voice_usage_async`; in-memory only, formatted to plain text):
+
+```python
+from typing import TypedDict, NotRequired
+
+class UsageHistoryDict(TypedDict):
+    # Shape mirrors the SDK 0.2.3 usage payload; modeled loosely because
+    # the exact period/paging fields are SDK-defined. Formatter is tolerant
+    # of missing optional fields (renders "-" / "0" fallbacks).
+    items: list[dict]            # per-period usage entries (period, characters, requests, ...)
+    next_page_token: NotRequired[str | None]
+
+class VoiceUsageDict(TypedDict):
+    voice_id: str
+    characters: NotRequired[int]
+    requests: NotRequired[int]
+```
+
+> The existing `CustomVoiceDict` (voice_id, name, optional description) is reused by `get_custom_voice`; if the SDK exposes a `created_at` field it is added as an optional key (`created_at: NotRequired[str]`).
+
 ---
 
 ## File Storage Schema

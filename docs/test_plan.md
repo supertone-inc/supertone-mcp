@@ -44,6 +44,12 @@
 | Default voice fallback | Medium (Assumption A4) | Medium -- omitting voice_id fails | **Medium** | Unit |
 | Output formatting (plain text, absolute paths) | Low | Low -- cosmetic but affects LLM parsing | **Low** | Unit |
 | Voice discovery client (`search_voices`, `get_voice`, `get_credit_balance`) — v0.2 | Medium (SDK pagination + nullable fields) | Medium -- discovery features (FR-012/013/014) unusable | **Medium** | Unit (pagination + error mapping + null-field handling), covered by ISSUE-014 |
+| Model enum sync / DEFAULT_MODEL (v0.3) | Medium (stale SUPPORTED_MODELS rejected 2 SDK models) | Medium -- valid models rejected; wrong default | **Medium** | Unit (all 7 models pass; regression for 3t/api_3), ISSUE-021 |
+| Streaming routing + sona_speech_1-only validation (v0.3) | Medium (cross-field rule + dual code paths) | High -- wrong SDK method or unsupported-model 500s | **High** | Unit (routing + fail-fast error string), ISSUE-023 |
+| Per-call output_mode/autoplay (env→param, v0.3) | Medium (BREAKING; env vars ignored) | Medium -- behavior surprises / leftover env reads | **Medium** | Unit (param-driven, env ignored), ISSUE-022 |
+| Relaxed 300-char limit (v0.3) | Low (removal of a check) | Low -- long text now delegated to SDK | **Low** | Unit (long text passes; empty still rejected), ISSUE-024 |
+| New TTS params include_phonemes/normalized_text (v0.3) | Low (pass-through) | Low | **Low** | Unit (forwarded to SDK), ISSUE-025 |
+| New tools get_custom_voice / usage (v0.3) | Medium (new SDK wrappers + formatters) | Medium -- FR-020/021/022 unusable | **Medium** | Unit (wrapper + handler + error mapping), ISSUE-026/027 |
 
 ---
 
@@ -171,6 +177,85 @@
 | TC-080 | Server module importable | Inspect registered tools | Both `text_to_speech` and `list_voices` are registered in the MCP server. | Integration | CI |
 | TC-081 | Server module importable | Inspect tool schemas | `text_to_speech` schema has `text` (required), `voice_id`, `language`, `output_format`, `speed`, `pitch_shift`, `style` (all optional). `list_voices` schema has `language` (optional). | Integration | CI |
 | TC-082 | Server started | Send MCP `tools/list` request | Response includes both tools with correct names and descriptions. | E2E | Manual |
+
+### Flow 8: Model Enum Sync (v0.3)
+
+- **Risk level:** Medium
+- **Related requirements:** FR-001, US-015, NFR-009; ISSUE-021
+
+#### Test Cases
+
+| ID | Precondition | Action | Expected Result | Type | Auto |
+|----|-------------|--------|-----------------|------|------|
+| TC-090 | None | `validate_model(m)` for each of the 7 models | No error for all 7 (`sona_speech_1/2/2_flash/2t/3t`, `supertonic_api_1/3`). | Unit | CI |
+| TC-091 | None | `validate_model("sona_speech_3t")`, `validate_model("supertonic_api_3")` | No error (regression for the stale SUPPORTED_MODELS bug). | Unit | CI |
+| TC-092 | None | `validate_model("sona_speech_99")` | Error: `Invalid model: "sona_speech_99". Supported models: sona_speech_1, sona_speech_2, sona_speech_2_flash, sona_speech_2t, sona_speech_3t, supertonic_api_1, supertonic_api_3.` | Unit | CI |
+| TC-093 | None | Inspect `DEFAULT_MODEL` | Equals `sona_speech_2_flash`. | Unit | CI |
+| TC-094 | Mocked client | `text_to_speech(text="hi", model="supertonic_api_3")` | No validation error; synthesize path invoked. | Unit | CI |
+
+### Flow 9: Streaming Routing + sona_speech_1-Only Validation (v0.3)
+
+- **Risk level:** High
+- **Related requirements:** FR-001, US-014, US-015; ISSUE-023
+
+#### Test Cases
+
+| ID | Precondition | Action | Expected Result | Type | Auto |
+|----|-------------|--------|-----------------|------|------|
+| TC-100 | Mocked client | `text_to_speech(text="hi")` (defaults) | `client.synthesize` called, NOT `synthesize_stream`. Files-mode response. | Unit | CI |
+| TC-101 | Mocked client | `text_to_speech(text="hi", streaming=True)` (model defaults to sona_speech_2_flash) | Returns exact error `Streaming is only supported by model "sona_speech_1" (received: "sona_speech_2_flash"). Set streaming=false or use sona_speech_1.`; neither SDK method called. | Unit | CI |
+| TC-102 | Mocked client | `text_to_speech(text="hi", model="sona_speech_1", streaming=True)` | `client.synthesize_stream` invoked; output produced from chunks. | Unit | CI |
+| TC-103 | Mocked client | `text_to_speech(text="hi", streaming=False, output_mode="resources")` | `client.synthesize` used; `[AudioContent, TextContent]` returned, no file. | Unit | CI |
+| TC-104 | Mocked client returns SDK duration | `text_to_speech(text="hi", streaming=False)` | SDK-provided duration preferred over mutagen value. | Unit | CI |
+
+### Flow 10: Per-Call output_mode / autoplay (env→param, v0.3)
+
+- **Risk level:** Medium
+- **Related requirements:** FR-001, US-012, US-013, NFR-009; ISSUE-022
+
+#### Test Cases
+
+| ID | Precondition | Action | Expected Result | Type | Auto |
+|----|-------------|--------|-----------------|------|------|
+| TC-110 | `SUPERTONE_MCP_OUTPUT_MODE=resources` set | `text_to_speech(text="hi")` (no output_mode arg) | Env ignored; files behavior used. | Unit | CI |
+| TC-111 | Mocked client | `text_to_speech(text="hi", output_mode="resources")` | No file written; AudioContent returned. | Unit | CI |
+| TC-112 | Mocked client | `text_to_speech(text="hi", output_mode="both")` | File saved + AudioContent returned with path in metadata. | Unit | CI |
+| TC-113 | Mocked client | `text_to_speech(text="hi", output_mode="invalid")` | Validation error `Invalid output mode: "invalid". Valid modes: files, resources, both.`; no API call. | Unit | CI |
+| TC-114 | `SUPERTONE_MCP_AUTOPLAY=true` set, macOS | `text_to_speech(text="hi")` (no autoplay arg) | `_autoplay` NOT called (default false; env ignored). | Unit | CI |
+| TC-115 | macOS, patched subprocess | `text_to_speech(text="hi", autoplay=True)` | `_autoplay` invoked. | Unit | CI |
+
+### Flow 11: Relaxed Length + New TTS Params (v0.3)
+
+- **Risk level:** Low
+- **Related requirements:** FR-001, FR-005 (relaxed), FR-016; ISSUE-024, ISSUE-025
+
+#### Test Cases
+
+| ID | Precondition | Action | Expected Result | Type | Auto |
+|----|-------------|--------|-----------------|------|------|
+| TC-120 | Mocked client | `text_to_speech(text="a"*500)` | No length error; synthesize called. | Unit | CI |
+| TC-121 | Mocked client | `predict_duration(text="a"*500)` | No length error; predict_duration called. | Unit | CI |
+| TC-122 | None | `text_to_speech(text="")` / `predict_duration(text="")` | `Text must not be empty.`; no API call. | Unit | CI |
+| TC-123 | Mocked client | `text_to_speech(text="hi", include_phonemes=True)` | SDK synthesize call receives `include_phonemes=True`. | Unit | CI |
+| TC-124 | Mocked client | `text_to_speech(text="hi", normalized_text="x", model="sona_speech_2_flash")` | SDK synthesize call receives `normalized_text="x"`. | Unit | CI |
+
+### Flow 12: New Tools — get_custom_voice / usage (v0.3)
+
+- **Risk level:** Medium
+- **Related requirements:** FR-020, FR-021, FR-022, US-016, US-017; ISSUE-026, ISSUE-027
+
+#### Test Cases
+
+| ID | Precondition | Action | Expected Result | Type | Auto |
+|----|-------------|--------|-----------------|------|------|
+| TC-130 | Mocked client | `get_custom_voice("cv1")` | Formatted detail (voice_id, name, description). | Unit | CI |
+| TC-131 | None | `get_custom_voice("")` | `voice_id must not be empty.`; no API call. | Unit | CI |
+| TC-132 | Mocked client | `get_usage_history()` | Formatted usage summary. | Unit | CI |
+| TC-133 | Mocked client returns empty | `get_usage_history()` | "no usage" message (not an error). | Unit | CI |
+| TC-134 | Mocked client | `get_voice_usage("v1")` | Formatted per-voice usage summary. | Unit | CI |
+| TC-135 | None | `get_voice_usage("")` | `voice_id must not be empty.`; no API call. | Unit | CI |
+| TC-136 | Mocked auth error | Any of the 3 new tools | `Authentication failed. Please verify your SUPERTONE_API_KEY.` | Unit | CI |
+| TC-137 | Server importable | Inspect registered tools | `get_custom_voice`, `get_usage_history`, `get_voice_usage` are registered. | Integration | CI |
 
 ---
 

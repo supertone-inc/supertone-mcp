@@ -680,6 +680,87 @@ Found 2 custom voices:
 | Custom voice not found (404) | `Custom voice not found: "{voice_id}".` |
 | API key / auth / rate / 5xx / network | Same as §4.3. |
 
+### 4.12 `text_to_speech` — v0.3 parameter additions
+
+> **v0.3 changes (BREAKING):** Behavior is controlled by per-call parameters, not env vars. The env vars `SUPERTONE_MCP_OUTPUT_MODE` and `SUPERTONE_MCP_AUTOPLAY` are removed and replaced by the `output_mode` and `autoplay` parameters; if set, they are ignored. The 300-character hard limit is removed (delegated to SDK auto-chunk). The `streaming` default is `false`.
+
+**Added parameter descriptions:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `output_mode` | How the audio is returned: `files` (default; save to disk, return path), `resources` (return audio as an MCP resource, no file), or `both`. Replaces the removed `SUPERTONE_MCP_OUTPUT_MODE` env var. |
+| `autoplay` | Play the audio locally after synthesis (macOS `afplay`). Default `false`. Replaces the removed `SUPERTONE_MCP_AUTOPLAY` env var (default changed `true`→`false`). |
+| `streaming` | `false` (default) = one-shot synthesis (`create_speech_async`); `true` = streaming (`stream_speech_async`). Only supported by `model=sona_speech_1`. |
+| `model` | TTS model (default `sona_speech_2_flash`): `sona_speech_1`, `sona_speech_2`, `sona_speech_2_flash`, `sona_speech_2t`, `sona_speech_3t`, `supertonic_api_1`, `supertonic_api_3`. |
+| `include_phonemes` | Return phoneme timing data with the audio. Default `false`. |
+| `normalized_text` | Pre-normalized text. Effective only for `sona_speech_2`/`sona_speech_2_flash`; ignored by other models. |
+
+**New/changed error states:**
+
+| Error Condition | Output Message |
+|----------------|----------------|
+| Invalid `output_mode` | `Invalid output mode: "{value}". Valid modes: files, resources, both.` |
+| Streaming with non-sona_speech_1 model | `Streaming is only supported by model "sona_speech_1" (received: "{model}"). Set streaming=false or use sona_speech_1.` |
+| Invalid model | `Invalid model: "{value}". Supported models: sona_speech_1, sona_speech_2, sona_speech_2_flash, sona_speech_2t, sona_speech_3t, supertonic_api_1, supertonic_api_3.` |
+| Text too long (>300) | **No longer an error in v0.3** — long text is auto-chunked by the SDK. |
+
+### 4.13 `get_custom_voice` (v0.3)
+
+**Tool description:**
+```
+Fetch the detail of a single custom (cloned) voice by voice_id. Returns voice_id, name, description, and created_at (when available).
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `voice_id` | Custom voice identifier. Required. |
+
+**Output (success):**
+```
+Voice ID: cv_abc123
+Name: MyVoice
+Description: warm narration voice
+Created: 2026-05-26
+```
+
+| Error Condition | Output Message |
+|----------------|----------------|
+| `voice_id` empty | `voice_id must not be empty.` |
+| API key / auth / rate / 5xx / network | Same as §4.3. |
+
+### 4.14 `get_usage_history` (v0.3)
+
+**Tool description:**
+```
+Retrieve usage history (e.g., per-period character/request counts). Use this to analyze credit consumption over time.
+```
+
+**Parameter descriptions:** All optional (within the SDK's period/paging range).
+
+**Output (success):** A plain-text summary of usage by period. When empty, a clear "No usage history found." style message (not an error).
+
+| Error Condition | Output Message |
+|----------------|----------------|
+| API key / auth / rate / 5xx / network | Same as §4.3. |
+
+### 4.15 `get_voice_usage` (v0.3)
+
+**Tool description:**
+```
+Retrieve usage for a specific voice by voice_id.
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `voice_id` | Voice identifier. Required. |
+
+**Output (success):** A plain-text usage summary for the given voice.
+
+| Error Condition | Output Message |
+|----------------|----------------|
+| `voice_id` empty | `voice_id must not be empty.` |
+| API key / auth / rate / 5xx / network | Same as §4.3. |
+
 ---
 
 ## 5. Error Message Copy Guidelines

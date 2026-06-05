@@ -86,6 +86,26 @@
   - `async edit_custom_voice(voice_id, name?, description?) -> dict` -- Wraps `custom_voices.edit_custom_voice_async`.
   - `async delete_custom_voice(voice_id) -> None` -- Wraps `custom_voices.delete_custom_voice_async`.
 
+### Module: v0.3 changes (concept pivot — composable SDK toolkit)
+
+The v0.3 pivot does not add new top-level Python modules; it extends `tools.py`, `server.py`, `supertone_client.py`, and `constants.py`.
+
+- **Behavior moves from env vars to per-call parameters.** `tools.text_to_speech` gains `output_mode`, `autoplay`, `streaming`, `include_phonemes`, and `normalized_text` parameters. The env reads `resolve_output_mode()` and `resolve_autoplay()` are removed; `SUPERTONE_MCP_OUTPUT_MODE` and `SUPERTONE_MCP_AUTOPLAY` are no longer consulted. Retained env vars: `SUPERTONE_API_KEY`, `SUPERTONE_MCP_VOICE_ID`, `SUPERTONE_OUTPUT_DIR` (auth + stable defaults only).
+- **synthesize vs synthesize_stream routing.** `text_to_speech` routes to the one-shot `SupertoneClient.synthesize` (`create_speech_async`) when `streaming=false` (the new default) and to `SupertoneClient.synthesize_stream` (`stream_speech_async`) when `streaming=true`. Both paths feed the same `output_mode` (files/resources/both) + autoplay logic.
+- **Streaming/model constraint (fail-fast).** Streaming is only supported by `sona_speech_1`. `text_to_speech` validates `streaming=true ⇒ model=="sona_speech_1"` BEFORE constructing/calling the client, returning `Streaming is only supported by model "sona_speech_1" (received: "{model}"). Set streaming=false or use sona_speech_1.`
+- **Model enum sync + DEFAULT_MODEL.** `constants.SUPPORTED_MODELS` is synced to the SDK 0.2.3 enum (7 models, adding `sona_speech_3t` and `supertonic_api_3`); `DEFAULT_MODEL` changes `sona_speech_1`→`sona_speech_2_flash`. The `_MODEL_MAP`/`_PREDICT_MODEL_MAP` in `supertone_client.py` are already built dynamically from the SDK enum, so they accept all 7 — only `SUPPORTED_MODELS`/`validate_model` needed the fix.
+- **Relaxed length.** The 300-char hard rejection (`validate_text_max_length`) is removed from `text_to_speech` and `predict_duration`; long text is delegated to the SDK auto-chunk (`_auto_chunk_text_async`). Only non-empty validation remains.
+- **New tools.** `get_custom_voice` (wraps `custom_voices.get_custom_voice_async`), `get_usage_history` (wraps `usage.get_usage_async`), and `get_voice_usage` (wraps `usage.get_voice_usage_async`) are added in `supertone_client.py` + `tools.py` + `server.py`.
+- **SDK version pin.** `pyproject.toml` pins `supertone>=0.2.3,<0.3` (rationale: an unpinned SDK silently desynced `SUPPORTED_MODELS` when 0.2.3 added 2 models — see NFR-009).
+
+| Operation | SDK Module | Method | MCP tool |
+|-----------|-----------|--------|----------|
+| Synthesize (one-shot) | `text_to_speech` | `create_speech_async` | `text_to_speech` (`streaming=false`) |
+| Synthesize (streaming) | `text_to_speech` | `stream_speech_async` | `text_to_speech` (`streaming=true`, sona_speech_1 only) |
+| Get custom voice | `custom_voices` | `get_custom_voice_async` | `get_custom_voice` (FR-020) |
+| Usage history | `usage` | `get_usage_async` | `get_usage_history` (FR-021) |
+| Voice usage | `usage` | `get_voice_usage_async` | `get_voice_usage` (FR-022) |
+
 ### Module: `__init__.py`
 
 - **Responsibility:** Package metadata (`__version__`). Re-exports nothing -- keeps import surface minimal.

@@ -43,6 +43,16 @@
 | #20 | feat(tools): add predict_duration tool (client + handler) | ISSUE-018 |
 | #22 | feat(clone): add clone_voice tool for single-file voice cloning | ISSUE-019 |
 
+### v0.3 Merged PRs
+
+| PR | Title | Issues |
+|----|-------|--------|
+| #32 | chore(constants): sync 7-model enum + DEFAULT_MODEL=sona_speech_2_flash | ISSUE-021 |
+| #34 | feat(tts): per-call output_mode/autoplay params, drop behavior env vars (BREAKING) | ISSUE-022 |
+| #36 | feat(tts): per-call streaming param + synthesize/stream routing + sona_speech_1 validation | ISSUE-023 |
+| #38 | feat(tools): relax 300-char hard limit, delegate long text to SDK auto-chunk | ISSUE-024 |
+| #40 | feat(tts): expose include_phonemes + normalized_text pass-through params | ISSUE-025 |
+
 ## Next Steps (v0.2)
 
 1. **ISSUE-014–020**: Implement the v0.2 tool surface — `search_voice`, `get_voice`, `get_credit_balance`, `preview_voice`, `predict_duration`, `clone_voice`, `search/edit/delete_custom_voice`. Note `list_voices` is removed (breaking change).
@@ -68,4 +78,4 @@
 | `docs/architecture.md` | v0.2 (SDK-backed client; expanded tool surface in `tools.py`) |
 | `docs/data_model.md` | v0.1 — to be revisited if cloning needs new types |
 | `docs/test_plan.md` | v0.1 — to extend as ISSUE-014–020 land |
-| `issues.md` | ISSUE-019 shipped (PR #22 → 1f3c479); ISSUE-020 queued |
+| `issues.md` | ISSUE-021–027 all shipped (v0.3 code complete); ISSUE-028 release deferred to human (Manual) |
