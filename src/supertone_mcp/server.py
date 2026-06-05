@@ -1,6 +1,9 @@
 """MCP server entry point for Supertone TTS."""
 
+from typing import Annotated
+
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 
 from supertone_mcp import tools
 
@@ -35,6 +38,18 @@ async def text_to_speech(
     style: str | None = None,
     output_mode: str | None = None,
     autoplay: bool = False,
+    streaming: Annotated[
+        bool,
+        Field(
+            description=(
+                "When true, stream the audio via the chunked synthesize path "
+                "instead of a single one-shot request. Streaming is ONLY "
+                "supported by model=sona_speech_1; using streaming=true with "
+                "any other model returns a validation error. Defaults to false "
+                "(one-shot synthesize)."
+            )
+        ),
+    ] = False,
 ) -> str | list:
     """Generate natural-sounding speech audio from text.
 
@@ -68,6 +83,11 @@ async def text_to_speech(
         autoplay: When true, plays the generated audio on macOS (afplay).
             Defaults to false. REPLACES the removed SUPERTONE_MCP_AUTOPLAY
             env var, which is no longer read.
+        streaming: When true, stream the audio via the chunked synthesize
+            path instead of a single one-shot request. Streaming is ONLY
+            supported by model="sona_speech_1"; using streaming=true with any
+            other model returns a validation error before any API call.
+            Defaults to false (one-shot synthesize).
     """
     return await tools.text_to_speech(
         text=text,
@@ -80,6 +100,7 @@ async def text_to_speech(
         style=style,
         output_mode=output_mode,
         autoplay=autoplay,
+        streaming=streaming,
     )
 
 

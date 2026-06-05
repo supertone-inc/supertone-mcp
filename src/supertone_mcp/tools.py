@@ -392,6 +392,7 @@ async def text_to_speech(
     style: str | None = None,
     output_mode: str | None = None,
     autoplay: bool = False,
+    streaming: bool = False,
 ) -> str | list:
     """Convert text to speech using Supertone TTS API.
 
@@ -401,6 +402,13 @@ async def text_to_speech(
         env var is NO LONGER read.
       - `autoplay`: defaults to False. The removed `SUPERTONE_MCP_AUTOPLAY`
         env var is NO LONGER read.
+
+    Synthesis routing is decided PER CALL (ISSUE-023):
+      - `streaming`: defaults to False. When False, the one-shot
+        `client.synthesize` path is used. When True, the
+        `client.synthesize_stream` chunked path is used. Streaming is only
+        supported by `model="sona_speech_1"`; any other model with
+        `streaming=True` fails fast BEFORE any SDK call.
 
     Returns a plain-text response string ("files" mode) or a list of Content
     objects ("resources"/"both" modes).
@@ -430,6 +438,14 @@ async def text_to_speech(
     except ValueError as e:
         return str(e)
 
+    # Cross-field validation (ISSUE-023): streaming requires sona_speech_1.
+    # Fail fast BEFORE constructing/calling the client.
+    if streaming and model != "sona_speech_1":
+        return (
+            f'Streaming is only supported by model "sona_speech_1" '
+            f'(received: "{model}"). Set streaming=false or use sona_speech_1.'
+        )
+
     # Resolve output directory (only needed for files/both modes)
     needs_file = output_mode in (OUTPUT_MODE_FILES, OUTPUT_MODE_BOTH)
     if needs_file:
@@ -439,10 +455,11 @@ async def text_to_speech(
         except ValueError as e:
             return str(e)
 
-    # Stream audio from SDK
+    # Synthesize audio from SDK (one-shot by default; streaming when requested)
     client = SupertoneClient(api_key=api_key)
     file_path_str: str | None = None
     output_path: Path | None = None
+    sdk_duration: float | None = None
 
     try:
         # Prepare file output path if needed
@@ -450,16 +467,51 @@ async def text_to_speech(
             output_path = generate_output_path(output_dir, output_format)
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Stream chunks: write to file and/or collect in memory
+        # Write to file and/or collect in memory
         memory_buffer = io.BytesIO()
         collect_in_memory = output_mode in (OUTPUT_MODE_RESOURCES, OUTPUT_MODE_BOTH)
-        file_handle = None
 
-        try:
-            if output_path is not None:
-                file_handle = open(output_path, "wb")
+        if streaming:
+            # Streaming path: consume chunks from synthesize_stream.
+            file_handle = None
+            try:
+                if output_path is not None:
+                    file_handle = open(output_path, "wb")
 
-            async for chunk in client.synthesize_stream(
+                async for chunk in client.synthesize_stream(
+                    voice_id=voice_id,
+                    text=text,
+                    language=language,
+                    output_format=output_format,
+                    model=model,
+                    speed=speed,
+                    pitch_shift=pitch_shift,
+                    style=style,
+                ):
+                    if file_handle is not None:
+                        file_handle.write(chunk)
+                    if collect_in_memory:
+                        memory_buffer.write(chunk)
+
+            except (
+                SupertoneAuthError,
+                SupertoneRateLimitError,
+                SupertoneServerError,
+                SupertoneConnectionError,
+            ):
+                raise
+            except Exception as exc:
+                # Unexpected error mid-stream: clean up partial file
+                if output_path is not None and output_path.exists():
+                    output_path.unlink(missing_ok=True)
+                return f"Streaming error: {exc}"
+            finally:
+                if file_handle is not None:
+                    file_handle.close()
+        else:
+            # One-shot path: a single synthesize() call returns all bytes plus
+            # an optional SDK-reported duration.
+            audio_bytes_oneshot, _content_type, sdk_duration = await client.synthesize(
                 voice_id=voice_id,
                 text=text,
                 language=language,
@@ -468,27 +520,12 @@ async def text_to_speech(
                 speed=speed,
                 pitch_shift=pitch_shift,
                 style=style,
-            ):
-                if file_handle is not None:
-                    file_handle.write(chunk)
-                if collect_in_memory:
-                    memory_buffer.write(chunk)
-
-        except (
-            SupertoneAuthError,
-            SupertoneRateLimitError,
-            SupertoneServerError,
-            SupertoneConnectionError,
-        ):
-            raise
-        except Exception as exc:
-            # Unexpected error mid-stream: clean up partial file
-            if output_path is not None and output_path.exists():
-                output_path.unlink(missing_ok=True)
-            return f"Streaming error: {exc}"
-        finally:
-            if file_handle is not None:
-                file_handle.close()
+            )
+            if output_path is not None:
+                with open(output_path, "wb") as fh:
+                    fh.write(audio_bytes_oneshot)
+            if collect_in_memory:
+                memory_buffer.write(audio_bytes_oneshot)
 
         if output_path is not None:
             file_path_str = str(output_path)
@@ -520,8 +557,12 @@ async def text_to_speech(
     finally:
         await client.aclose()
 
-    # Calculate duration from completed file
-    if file_path_str:
+    # Determine duration. The one-shot path may return an SDK-reported
+    # duration (ISSUE-023) — prefer it over the mutagen-derived value when
+    # present. Otherwise fall back to reading the completed file with mutagen.
+    if sdk_duration is not None:
+        duration = round(sdk_duration, 1)
+    elif file_path_str:
         duration = calculate_duration(file_path_str)
     else:
         duration = 0.0
