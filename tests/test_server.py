@@ -114,6 +114,28 @@ class TestToolRegistration:
         assert "output_mode" in desc
         assert "autoplay" in desc
 
+    def test_text_to_speech_has_streaming_param(self):
+        """ISSUE-023: streaming boolean param present, optional, default false."""
+        tool = mcp._tool_manager._tools["text_to_speech"]
+        schema = tool.parameters
+        properties = schema["properties"]
+        assert "streaming" in properties
+        # Boolean type
+        assert properties["streaming"].get("type") == "boolean"
+        # Default false
+        assert properties["streaming"].get("default") is False
+        # Optional (not in required)
+        assert "streaming" not in schema.get("required", [])
+
+    def test_text_to_speech_streaming_documents_sona1_requirement(self):
+        """ISSUE-023: streaming description/docstring states sona_speech_1-only."""
+        tool = mcp._tool_manager._tools["text_to_speech"]
+        # The per-parameter description lives in the JSON schema; the
+        # sona_speech_1 requirement must be discoverable to the LLM.
+        prop_desc = tool.parameters["properties"]["streaming"].get("description", "")
+        haystack = (prop_desc + " " + (tool.description or "")).lower()
+        assert "sona_speech_1" in haystack
+
     def test_search_voice_all_filters_optional(self):
         """search_voice must accept zero filters."""
         tool = mcp._tool_manager._tools["search_voice"]
@@ -283,23 +305,24 @@ class TestToolRegistration:
 
         text_to_speech exposes (voice_id, language, output_format, model,
         speed, pitch_shift, style) as optional synthesis inputs, plus the
-        output-handling params (output_mode, autoplay) added in ISSUE-022.
-        predict_duration produces no audio, so it intentionally excludes the
-        output-handling params but must match on every synthesis input.
+        output/routing-handling params (output_mode, autoplay added in
+        ISSUE-022; streaming added in ISSUE-023). predict_duration produces no
+        audio, so it intentionally excludes the output/routing params but must
+        match on every synthesis input.
         """
         tts_tool = mcp._tool_manager._tools["text_to_speech"]
         pd_tool = mcp._tool_manager._tools["predict_duration"]
         tts_props = set(tts_tool.parameters["properties"].keys())
         pd_props = set(pd_tool.parameters["properties"].keys())
-        # ISSUE-022: output handling is synthesis-only; predict_duration omits it.
-        output_handling = {"output_mode", "autoplay"}
+        # output/routing handling is synthesis-only; predict_duration omits it.
+        output_handling = {"output_mode", "autoplay", "streaming"}
         synthesis_inputs = tts_props - output_handling
         assert synthesis_inputs == pd_props, (
             f"predict_duration schema mismatch with text_to_speech: "
             f"missing={synthesis_inputs - pd_props}, "
             f"extra={pd_props - synthesis_inputs}"
         )
-        # The output-handling params must NOT appear on predict_duration.
+        # The output/routing-handling params must NOT appear on predict_duration.
         assert output_handling.isdisjoint(pd_props)
 
     def test_predict_duration_optional_params_are_optional(self):

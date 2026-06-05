@@ -496,6 +496,22 @@ def _mock_stream(chunks=None, side_effect=None):
     return _gen
 
 
+def _mock_synthesize(
+    audio_bytes=None, content_type="audio/mp3", duration=None, side_effect=None
+):
+    """Mock for SupertoneClient.synthesize (one-shot, ISSUE-023).
+
+    `synthesize` returns a (bytes, content_type, duration|None) tuple. This
+    helper returns an AsyncMock with that return value, or one that raises
+    `side_effect` when awaited.
+    """
+    if side_effect is not None:
+        return AsyncMock(side_effect=side_effect)
+    if audio_bytes is None:
+        audio_bytes = _AUDIO_DATA
+    return AsyncMock(return_value=(audio_bytes, content_type, duration))
+
+
 def _mock_get_voices(voices=None):
     """Mock for SupertoneClient.get_voices."""
     if voices is None:
@@ -531,7 +547,13 @@ def _env_files(tmp_path):
 
 
 class TestTextToSpeechHandler:
-    """Tests for the text_to_speech streaming handler."""
+    """Tests for the text_to_speech handler.
+
+    As of ISSUE-023, the default (streaming=False) path routes to the one-shot
+    `client.synthesize`; the streaming path (`client.synthesize_stream`) is
+    only reached when `streaming=True` and `model="sona_speech_1"`. Default-path
+    tests therefore mock `synthesize`; streaming tests opt in explicitly.
+    """
 
     @pytest.mark.asyncio
     async def test_happy_path(self, tmp_path):
@@ -540,6 +562,7 @@ class TestTextToSpeechHandler:
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
+            inst.synthesize = _mock_synthesize()
             inst.synthesize_stream = _mock_stream()
             inst.aclose = AsyncMock()
 
@@ -549,20 +572,106 @@ class TestTextToSpeechHandler:
         assert str(tmp_path) in result
 
     @pytest.mark.asyncio
-    async def test_streaming_writes_chunks_to_file(self, tmp_path):
-        """Verify file contains concatenated chunks."""
+    async def test_default_routes_to_synthesize_not_stream(self, tmp_path):
+        """AC: default args -> client.synthesize called, NOT synthesize_stream."""
         with (
             patch.dict(os.environ, _env_files(tmp_path)),
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
+            inst.synthesize = _mock_synthesize()
             inst.synthesize_stream = _mock_stream()
+            inst.aclose = AsyncMock()
+
+            result = await text_to_speech(text="hi")
+
+        inst.synthesize.assert_awaited_once()
+        # synthesize_stream is a plain callable mock here; ensure it never ran
+        # by confirming the file holds the one-shot bytes, not stream chunks.
+        assert "Audio file saved:" in result
+        fpath = result.split("Audio file saved: ")[1].split("\n")[0]
+        assert Path(fpath).read_bytes() == _AUDIO_DATA
+
+    @pytest.mark.asyncio
+    async def test_streaming_true_sona1_invokes_stream(self, tmp_path):
+        """AC: streaming=True + sona_speech_1 -> synthesize_stream invoked,
+        file produced from streamed chunks; synthesize NOT called."""
+        with (
+            patch.dict(os.environ, _env_files(tmp_path)),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.synthesize = _mock_synthesize()
+            inst.synthesize_stream = _mock_stream()
+            inst.aclose = AsyncMock()
+
+            result = await text_to_speech(
+                text="Hello", model="sona_speech_1", streaming=True
+            )
+
+        inst.synthesize.assert_not_awaited()
+        path = result.split("Audio file saved: ")[1].split("\n")[0]
+        assert Path(path).read_bytes() == _AUDIO_DATA
+
+    @pytest.mark.asyncio
+    async def test_streaming_true_non_sona1_fails_fast(self):
+        """AC: streaming=True + non-sona_speech_1 model -> exact error string,
+        and NEITHER synthesize NOR synthesize_stream is called (client never
+        constructed)."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            result = await text_to_speech(
+                text="hi", model="sona_speech_2_flash", streaming=True
+            )
+
+        assert result == (
+            'Streaming is only supported by model "sona_speech_1" '
+            '(received: "sona_speech_2_flash"). '
+            "Set streaming=false or use sona_speech_1."
+        )
+        MC.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_streaming_false_prefers_sdk_duration(self, tmp_path):
+        """AC: streaming=False prefers the SDK-provided duration over mutagen."""
+        mock_audio = MagicMock()
+        mock_audio.info.length = 3.456
+
+        with (
+            patch.dict(os.environ, _env_files(tmp_path)),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+            patch("supertone_mcp.tools.MutagenFile", return_value=mock_audio),
+        ):
+            inst = MC.return_value
+            inst.synthesize = _mock_synthesize(duration=7.2)
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello")
 
-        path = result.split("Audio file saved: ")[1].split("\n")[0]
-        assert Path(path).read_bytes() == _AUDIO_DATA
+        # SDK duration (7.2) wins over mutagen-derived (3.5)
+        assert "Duration: 7.2 seconds" in result
+
+    @pytest.mark.asyncio
+    async def test_streaming_false_falls_back_to_mutagen_duration(self, tmp_path):
+        """When the SDK returns duration=None, mutagen-derived value is used."""
+        mock_audio = MagicMock()
+        mock_audio.info.length = 3.456
+
+        with (
+            patch.dict(os.environ, _env_files(tmp_path)),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+            patch("supertone_mcp.tools.MutagenFile", return_value=mock_audio),
+        ):
+            inst = MC.return_value
+            inst.synthesize = _mock_synthesize(duration=None)
+            inst.aclose = AsyncMock()
+
+            result = await text_to_speech(text="Hello")
+
+        assert "Duration: 3.5 seconds" in result
 
     @pytest.mark.asyncio
     async def test_default_model_is_flash(self):
@@ -574,15 +683,14 @@ class TestTextToSpeechHandler:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("model", ["sona_speech_3t", "supertonic_api_3"])
     async def test_new_models_invoke_synthesize_path(self, tmp_path, model):
-        """The 2 new SDK 0.2.3 models pass validation and reach the stream
-        path (no validation error returned)."""
+        """The 2 new SDK 0.2.3 models pass validation and reach the one-shot
+        synthesize path (no validation error returned)."""
         with (
             patch.dict(os.environ, _env_files(tmp_path)),
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            stream = _mock_stream()
-            inst.synthesize_stream = stream
+            inst.synthesize = _mock_synthesize()
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="hi", model=model)
@@ -590,10 +698,11 @@ class TestTextToSpeechHandler:
         # No validation error string; a file was saved instead.
         assert "Invalid model" not in result
         assert "Audio file saved:" in result
+        inst.synthesize.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_mutagen_duration(self, tmp_path):
-        """Duration calculated via mutagen on file."""
+        """Duration calculated via mutagen on file (SDK duration absent)."""
         mock_audio = MagicMock()
         mock_audio.info.length = 3.456
 
@@ -606,7 +715,7 @@ class TestTextToSpeechHandler:
             ),
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream()
+            inst.synthesize = _mock_synthesize(duration=None)
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello")
@@ -620,7 +729,7 @@ class TestTextToSpeechHandler:
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream()
+            inst.synthesize = _mock_synthesize()
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello")
@@ -639,7 +748,7 @@ class TestTextToSpeechHandler:
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream()
+            inst.synthesize = _mock_synthesize()
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello")
@@ -653,7 +762,7 @@ class TestTextToSpeechHandler:
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream()
+            inst.synthesize = _mock_synthesize()
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello")
@@ -681,7 +790,7 @@ class TestTextToSpeechHandler:
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream(side_effect=SupertoneAuthError())
+            inst.synthesize = _mock_synthesize(side_effect=SupertoneAuthError())
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello")
@@ -696,7 +805,7 @@ class TestTextToSpeechHandler:
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream(side_effect=SupertoneRateLimitError())
+            inst.synthesize = _mock_synthesize(side_effect=SupertoneRateLimitError())
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello")
@@ -711,7 +820,7 @@ class TestTextToSpeechHandler:
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream(side_effect=SupertoneServerError(503))
+            inst.synthesize = _mock_synthesize(side_effect=SupertoneServerError(503))
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello")
@@ -721,13 +830,13 @@ class TestTextToSpeechHandler:
 
     @pytest.mark.asyncio
     async def test_server_error_cleans_partial_file(self, tmp_path):
-        """Mid-stream server error should clean up partial."""
+        """Server error on one-shot path should clean up any partial file."""
         with (
             patch.dict(os.environ, _env_files(tmp_path)),
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream(side_effect=SupertoneServerError(500))
+            inst.synthesize = _mock_synthesize(side_effect=SupertoneServerError(500))
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello")
@@ -744,9 +853,7 @@ class TestTextToSpeechHandler:
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream(
-                side_effect=SupertoneConnectionError()
-            )
+            inst.synthesize = _mock_synthesize(side_effect=SupertoneConnectionError())
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello")
@@ -760,7 +867,7 @@ class TestTextToSpeechHandler:
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream()
+            inst.synthesize = _mock_synthesize()
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello")
@@ -787,7 +894,7 @@ class TestTextToSpeechHandler:
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream()
+            inst.synthesize = _mock_synthesize()
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello")
@@ -800,17 +907,20 @@ class TestTextToSpeechHandler:
 
     @pytest.mark.asyncio
     async def test_resources_mode_returns_audio_content(self):
+        """AC: streaming=False + output_mode=resources -> synthesize used,
+        [AudioContent, TextContent] from one-shot bytes, no file."""
         env = {"SUPERTONE_API_KEY": "key"}
         with (
             patch.dict(os.environ, env),
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream()
+            inst.synthesize = _mock_synthesize()
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello", output_mode="resources")
 
+        inst.synthesize.assert_awaited_once()
         assert isinstance(result, list)
         assert len(result) == 2
         assert isinstance(result[0], AudioContent)
@@ -829,7 +939,7 @@ class TestTextToSpeechHandler:
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream()
+            inst.synthesize = _mock_synthesize()
             inst.aclose = AsyncMock()
 
             await text_to_speech(text="Hello", output_mode="resources")
@@ -838,14 +948,14 @@ class TestTextToSpeechHandler:
 
     @pytest.mark.asyncio
     async def test_resources_mode_collects_in_memory(self):
-        """Resources mode collects all chunks in memory."""
+        """Resources mode returns the one-shot bytes in memory."""
         env = {"SUPERTONE_API_KEY": "key"}
         with (
             patch.dict(os.environ, env),
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream()
+            inst.synthesize = _mock_synthesize()
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello", output_mode="resources")
@@ -864,7 +974,7 @@ class TestTextToSpeechHandler:
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream()
+            inst.synthesize = _mock_synthesize()
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello", output_mode="both")
@@ -887,7 +997,9 @@ class TestTextToSpeechHandler:
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream(chunks=[b"\x00" * 10])
+            inst.synthesize = _mock_synthesize(
+                audio_bytes=b"\x00" * 10, content_type="audio/wav"
+            )
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(
@@ -918,7 +1030,7 @@ class TestTextToSpeechHandler:
             patch("supertone_mcp.tools.SupertoneClient") as MC,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream()
+            inst.synthesize = _mock_synthesize()
             inst.aclose = AsyncMock()
 
             result = await text_to_speech(text="Hello", output_mode="resources")
@@ -935,7 +1047,7 @@ class TestTextToSpeechHandler:
             patch("supertone_mcp.tools._autoplay") as mock_ap,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream()
+            inst.synthesize = _mock_synthesize()
             inst.aclose = AsyncMock()
 
             await text_to_speech(text="Hello", autoplay=True)
@@ -958,7 +1070,7 @@ class TestTextToSpeechHandler:
             patch("supertone_mcp.tools._autoplay") as mock_ap,
         ):
             inst = MC.return_value
-            inst.synthesize_stream = _mock_stream()
+            inst.synthesize = _mock_synthesize()
             inst.aclose = AsyncMock()
 
             await text_to_speech(text="Hello")
@@ -966,8 +1078,49 @@ class TestTextToSpeechHandler:
         mock_ap.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_streaming_writes_chunks_to_file(self, tmp_path):
+        """Streaming path (sona_speech_1) writes concatenated chunks to file."""
+        with (
+            patch.dict(os.environ, _env_files(tmp_path)),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.synthesize_stream = _mock_stream()
+            inst.aclose = AsyncMock()
+
+            result = await text_to_speech(
+                text="Hello", model="sona_speech_1", streaming=True
+            )
+
+        path = result.split("Audio file saved: ")[1].split("\n")[0]
+        assert Path(path).read_bytes() == _AUDIO_DATA
+
+    @pytest.mark.asyncio
+    async def test_streaming_resources_mode_returns_audio(self):
+        """Streaming path also feeds resources mode (AudioContent from chunks)."""
+        env = {"SUPERTONE_API_KEY": "key"}
+        with (
+            patch.dict(os.environ, env),
+            patch("supertone_mcp.tools.SupertoneClient") as MC,
+        ):
+            inst = MC.return_value
+            inst.synthesize_stream = _mock_stream()
+            inst.aclose = AsyncMock()
+
+            result = await text_to_speech(
+                text="Hello",
+                model="sona_speech_1",
+                streaming=True,
+                output_mode="resources",
+            )
+
+        assert isinstance(result, list)
+        assert isinstance(result[0], AudioContent)
+        assert base64.b64decode(result[0].data) == _AUDIO_DATA
+
+    @pytest.mark.asyncio
     async def test_mid_stream_error_cleans_partial(self, tmp_path):
-        """Unexpected error during streaming cleans up."""
+        """Unexpected error during streaming cleans up partial file."""
 
         async def _failing_gen(*args, **kwargs):
             yield b"\xff" * 10
@@ -981,7 +1134,9 @@ class TestTextToSpeechHandler:
             inst.synthesize_stream = _failing_gen
             inst.aclose = AsyncMock()
 
-            result = await text_to_speech(text="Hello")
+            result = await text_to_speech(
+                text="Hello", model="sona_speech_1", streaming=True
+            )
 
         assert "Streaming error" in result
         # Partial file should be cleaned up
