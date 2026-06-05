@@ -17,6 +17,7 @@
 | ISSUE-025 | done | 0 | PR #40 merged | shipped |
 | ISSUE-026 | done | 0 | PR #42 merged | shipped |
 | ISSUE-027 | done | 0 | PR #44 merged | shipped |
+| ISSUE-028 | done | 0 | PR #46 merged (manual: docs+0.2.0 prep) | shipped |
 
 ## Discovered Issues
 - [iteration 1] ISSUE-021 review: predict_duration docstring stale default

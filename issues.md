@@ -36,7 +36,7 @@
 | ISSUE-025 | Expose include_phonemes + normalized_text TTS params | P2 | 0.5d | ISSUE-022 | done |
 | ISSUE-026 | New tool get_custom_voice | P2 | 0.5d | ISSUE-021 | done |
 | ISSUE-027 | New usage tools get_usage_history + get_voice_usage | P2 | 1d | ISSUE-021 | backlog |
-| ISSUE-028 | Docs/README reframe + env→param migration + 0.3.0 release | P2 | 1d | ISSUE-021..ISSUE-027 | backlog |
+| ISSUE-028 | Docs/README reframe + env→param migration + 0.2.0 release | P2 | 1d | ISSUE-021..ISSUE-027 | done |
 
 ---
 
@@ -1357,16 +1357,16 @@ Revert the two client methods, two handlers, two formatters, server registration
 
 ---
 
-### ISSUE-028: Docs/README reframe + env→param migration + 0.3.0 release
+### ISSUE-028: Docs/README reframe + env→param migration + 0.2.0 release
 - Track: product
 - PRD-Ref: PRD §1 (v0.3 pivot), FR-001, FR3 (config), FR-020, FR-021, FR-022, US-012..US-017
 - Priority: P2
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner: -
-- Branch: -
-- GH-Issue: -
-- PR: -
+- Branch: issue/ISSUE-028-docs-v03-release
+- GH-Issue: 45
+- PR: 46
 - Depends-On: ISSUE-021, ISSUE-022, ISSUE-023, ISSUE-024, ISSUE-025, ISSUE-026, ISSUE-027
 - Manual: true
 
@@ -1479,7 +1479,7 @@ ISSUE-021 (SDK 0.2.3 sync: model enum + DEFAULT_MODEL + version pin)
   +-- ISSUE-026 (new tool get_custom_voice)            [needs 021, parallel with 022 chain]
   +-- ISSUE-027 (new usage tools get_usage_history + get_voice_usage)  [needs 021]
         |
-ISSUE-028 (docs/README reframe + env→param migration + 0.3.0 release)  [needs 021..027]
+ISSUE-028 (docs/README reframe + env→param migration + 0.2.0 release)  [needs 021..027]
 ```
 
 **v0.3 critical path:** 021 -> 022 -> 023 -> 028
