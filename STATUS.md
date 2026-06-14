@@ -66,3 +66,18 @@ custom-voice CRUD — across 31 languages and 7 models.
 | `docs/test_plan.md` | v0.3 (streaming routing, output_mode, new tools, relaxed length) |
 | `CHANGELOG.md` | 0.2.0 entry (pending `v0.2.0` tag) |
 | `issues.md` | ISSUE-021–028 all shipped (PRs #32–#46) |
+
+## v0.4 Milestone — Audio Assembly (planned)
+
+| Metric | Count |
+|--------|-------|
+| v0.4 batch (ISSUE-029) | 1 |
+| Done | 0 |
+| In progress | 0 |
+| Remaining | 1 |
+
+### v0.4 Backlog
+
+| Issue | Title | Status |
+|-------|-------|--------|
+| ISSUE-029 | Add merge_audio_files tool (ffmpeg-backed audio concatenation) | open |

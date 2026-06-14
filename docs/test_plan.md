@@ -50,6 +50,7 @@
 | Relaxed 300-char limit (v0.3) | Low (removal of a check) | Low -- long text now delegated to SDK | **Low** | Unit (long text passes; empty still rejected), ISSUE-024 |
 | New TTS params include_phonemes/normalized_text (v0.3) | Low (pass-through) | Low | **Low** | Unit (forwarded to SDK), ISSUE-025 |
 | New tools get_custom_voice / usage (v0.3) | Medium (new SDK wrappers + formatters) | Medium -- FR-020/021/022 unusable | **Medium** | Unit (wrapper + handler + error mapping), ISSUE-026/027 |
+| merge_audio_files ffmpeg subprocess (v0.4) | Medium (subprocess + binary packaging) | Medium -- FR-023 unusable; other tools unaffected | **Medium** | Unit (mocked subprocess + imageio-ffmpeg); integration with real ffmpeg binary (manual), ISSUE-029 |
 
 ---
 
@@ -256,6 +257,30 @@
 | TC-135 | None | `get_voice_usage("")` | `voice_id must not be empty.`; no API call. | Unit | CI |
 | TC-136 | Mocked auth error | Any of the 3 new tools | `Authentication failed. Please verify your SUPERTONE_API_KEY.` | Unit | CI |
 | TC-137 | Server importable | Inspect registered tools | `get_custom_voice`, `get_usage_history`, `get_voice_usage` are registered. | Integration | CI |
+
+### Flow 13: merge_audio_files (v0.4 / ISSUE-029)
+
+- **Risk level:** Medium
+- **Related requirements:** FR-023, US-018, NFR-010, NFR-004
+
+#### Test Cases
+
+| ID | Precondition | Action | Expected Result | Type | Auto |
+|----|-------------|--------|-----------------|------|------|
+| TC-140 | 2 valid MP3 files exist | `merge_audio_files(input_paths=[p1, p2])` | Merged file saved to output dir; response contains absolute path, duration, "Inputs: 2", "Format: mp3". | Integration | CI |
+| TC-141 | 3 valid WAV files exist | `merge_audio_files(input_paths=[p1, p2, p3])` | Merged file saved; format is wav; "Inputs: 3" in response. | Integration | CI |
+| TC-142 | 1 valid MP3 file exists | `merge_audio_files(input_paths=[p1])` | Single-file passthrough; no ffmpeg invoked; original path returned. | Unit | CI |
+| TC-143 | None | `merge_audio_files(input_paths=[])` | Error: `Input file list must not be empty.`; no ffmpeg invoked. | Unit | CI |
+| TC-144 | One path does not exist | `merge_audio_files(input_paths=["missing.mp3", p2])` | Error: `Audio file not found: missing.mp3.`; no ffmpeg invoked. | Unit | CI |
+| TC-145 | File has `.ogg` extension | `merge_audio_files(input_paths=[ogg_file, p2])` | Error: `Unsupported format: ".ogg". Supported: mp3, wav.`; no ffmpeg invoked. | Unit | CI |
+| TC-146 | Mixed .mp3 + .wav inputs | `merge_audio_files(input_paths=[mp3, wav])` | Auto-format resolves to mp3; merged file has `.mp3` extension. | Integration | CI |
+| TC-147 | Mixed .mp3 + .wav, explicit override | `merge_audio_files(input_paths=[mp3, wav], output_format="wav")` | Output uses `.wav`. | Integration | CI |
+| TC-148 | None | `merge_audio_files(input_paths=[p1, p2], gap_ms=500)` | ffmpeg invoked with silence gap of 500ms between clips. | Unit | CI |
+| TC-149 | None | `merge_audio_files(input_paths=[p1, p2], crossfade_ms=200)` | ffmpeg invoked with 200ms crossfade filter. | Unit | CI |
+| TC-150 | None | `merge_audio_files(input_paths=[p1, p2], gap_ms=500, crossfade_ms=200)` | Error: `gap_ms and crossfade_ms are mutually exclusive. Set one to 0.`; no ffmpeg invoked. | Unit | CI |
+| TC-151 | ffmpeg exits nonzero (mocked) | `merge_audio_files(input_paths=[p1, p2])` | Error: `Audio merge failed: {stderr_excerpt}.` | Unit | CI |
+| TC-152 | `imageio_ffmpeg` mocked | `merge_audio_files(...)` | `imageio_ffmpeg.get_ffmpeg_exe()` is called to resolve the ffmpeg binary (no system ffmpeg relied upon). | Unit | CI |
+| TC-153 | None | `merge_audio_files(input_paths=[p1, p2], output_format="ogg")` | Error: `Invalid output format: "ogg". Supported formats: mp3, wav.`; no ffmpeg invoked. | Unit | CI |
 
 ---
 

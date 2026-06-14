@@ -37,6 +37,7 @@
 | ISSUE-026 | New tool get_custom_voice | P2 | 0.5d | ISSUE-021 | done |
 | ISSUE-027 | New usage tools get_usage_history + get_voice_usage | P2 | 1d | ISSUE-021 | backlog |
 | ISSUE-028 | Docs/README reframe + env→param migration + 0.2.0 release | P2 | 1d | ISSUE-021..ISSUE-027 | done |
+| ISSUE-029 | Add merge_audio_files tool (ffmpeg-backed audio concatenation) | P2 | 1.5d | - |
 
 ---
 
@@ -1404,6 +1405,73 @@ Revert README/server.json/version changes; if a broken 0.3.0 is published, yank 
 
 ---
 
+
+### ISSUE-029: Add merge_audio_files tool (ffmpeg-backed audio concatenation)
+- Track: product
+- PRD-Ref: US-018, FR-023, NFR-010
+- Priority: P2
+- Estimate: 1.5d
+- Status: open
+- Owner: -
+- Branch: issue/ISSUE-029-merge-audio-files
+- GH-Issue: -
+- PR: -
+- Depends-On: -
+- Spec-Required: false
+
+#### Goal
+Add a `merge_audio_files` MCP tool backed by a bundled ffmpeg binary that concatenates two or more audio files produced by `text_to_speech` calls into a single deliverable, supporting head-to-tail concat, silence-gap insertion, and crossfade blending.
+
+#### Scope (In/Out)
+- In: New `src/supertone_mcp/audio_ops.py` module with async ffmpeg subprocess logic; new `merge_audio_files` tool handler in `tools.py`; server registration in `server.py`; `imageio-ffmpeg>=0.5` dependency in `pyproject.toml`; `MERGE_SUPPORTED_EXTENSIONS` constant in `constants.py`; tests in `tests/test_audio_ops.py` and extensions to `tests/test_tools.py` / `tests/test_server.py`.
+- Out: Audio mix/overlay (deferred to a future issue), multi-track panning, any operation beyond concat/gap/crossfade, system ffmpeg reliance.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given two or more valid audio file paths with the same extension, when `merge_audio_files` is called with no gap/crossfade args, then the files are concatenated head-to-tail and a merged file is saved to `SUPERTONE_OUTPUT_DIR` with the standard `{YYYY-MM-DD}_{uuid8}.{ext}` naming; the response contains the absolute path, duration, input count, and format.
+- [ ] Given `gap_ms=500`, when called with two valid files, then 500ms of silence is inserted at each junction.
+- [ ] Given `crossfade_ms=200`, when called with two valid files, then a 200ms crossfade blend is applied at each junction.
+- [ ] Given both `gap_ms > 0` and `crossfade_ms > 0`, when called, then `gap_ms and crossfade_ms are mutually exclusive. Set one to 0.` is returned and no ffmpeg process is spawned.
+- [ ] Given a single input path, when called, then the file is returned as-is (passthrough; no ffmpeg invoked).
+- [ ] Given an empty input list, when called, then `Input file list must not be empty.` is returned.
+- [ ] Given a file path that does not exist, when called, then `Audio file not found: {path}.` is returned before invoking ffmpeg.
+- [ ] Given a file with an unsupported extension (e.g., `.ogg`), when called, then `Unsupported format: ".ogg". Supported: mp3, wav.` is returned.
+- [ ] Given mixed-extension inputs (.mp3 + .wav) with no explicit `output_format`, when called, then the output defaults to `.mp3`.
+- [ ] Given `output_format="wav"`, when called, then the output uses `.wav` regardless of input extensions.
+- [ ] Given `output_format="ogg"`, when called, then `Invalid output format: "ogg". Supported formats: mp3, wav.` is returned.
+- [ ] Given ffmpeg exits with a nonzero code (mocked), when called, then `Audio merge failed: {stderr_excerpt}.` is returned.
+- [ ] Given the tool is registered in the server, when `tools/list` is queried, then `merge_audio_files` appears with correct schema.
+
+#### Implementation Notes
+- **Dependency:** Add `imageio-ffmpeg>=0.5` by running `uv add imageio-ffmpeg` (do NOT edit `pyproject.toml` by hand — let uv manage it).
+- File: `src/supertone_mcp/audio_ops.py` (new) — `async merge_audio(input_paths: list[str], gap_ms: int, crossfade_ms: int, output_format: str) -> tuple[bytes, str]`; resolves ffmpeg via `imageio_ffmpeg.get_ffmpeg_exe()`; for plain concat uses the ffmpeg concat demuxer; for `gap_ms` inserts `aevalsrc=0:duration={gap_ms/1000}` silence; for `crossfade_ms` uses `acrossfade` filter; invokes via `asyncio.create_subprocess_exec` with `-y`; captures stdout bytes and stderr; raises `RuntimeError` with stderr excerpt on nonzero exit.
+- File: `src/supertone_mcp/tools.py` — add `async merge_audio_files(input_paths: list[str], gap_ms: int = 0, crossfade_ms: int = 0, output_format: str | None = None) -> str`; perform all fail-fast validation (empty list, file existence, extension check, mutually-exclusive gap+crossfade, output_format enum); single-file passthrough path; output dir resolution and filename generation reuse existing helpers; call `audio_ops.merge_audio(...)`; write bytes; calculate duration; return formatted response.
+- File: `src/supertone_mcp/server.py` — register `merge_audio_files` tool with full parameter schema and description matching UX spec §2.16.
+- File: `src/supertone_mcp/constants.py` — add `MERGE_SUPPORTED_EXTENSIONS: list[str] = ["mp3", "wav"]` (or reuse `SUPPORTED_FORMATS` if already equivalent).
+- Tests: `tests/test_audio_ops.py` (new) mocks `asyncio.create_subprocess_exec` and `imageio_ffmpeg.get_ffmpeg_exe`; `tests/test_tools.py` covers all validation paths and the happy-path handler; `tests/test_server.py` verifies tool registration. No real ffmpeg in CI — all subprocess calls are mocked.
+- Error-mapping: `RuntimeError` from `audio_ops.merge_audio` → user-facing `Audio merge failed: ...` string; `OSError`/`PermissionError` on file write → existing output-dir error messages.
+- Review lessons applied: fail-fast before subprocess, no system binary reliance, mock subprocess in all tests (never real network/process in CI).
+- Spec-gate bypass rationale: decisions (ffmpeg bundling via imageio-ffmpeg, gap_ms/crossfade_ms mutual exclusion, output-format auto-detect→mp3, single-file passthrough) are already documented in this block + docs/architecture.md tradeoffs/failure-modes + docs/test_plan.md Flow 13; a separate SPEC would duplicate.
+
+#### Tests
+- [ ] TC-140: Happy path — 2 same-extension MP3 files → merged file saved, response has path + duration + "Inputs: 2" + "Format: mp3".
+- [ ] TC-141: 3 same-extension WAV files → merged WAV, "Inputs: 3".
+- [ ] TC-142: Single-file passthrough — no ffmpeg invoked; original path returned.
+- [ ] TC-143: Empty input list → `Input file list must not be empty.`; no ffmpeg.
+- [ ] TC-144: Missing file → `Audio file not found: {path}.`; no ffmpeg.
+- [ ] TC-145: Unsupported extension `.ogg` → `Unsupported format: ".ogg". Supported: mp3, wav.`
+- [ ] TC-146: Mixed .mp3 + .wav → output defaults to `.mp3`.
+- [ ] TC-147: Mixed inputs + `output_format="wav"` → output uses `.wav`.
+- [ ] TC-148: `gap_ms=500` → ffmpeg invoked with silence at junctions.
+- [ ] TC-149: `crossfade_ms=200` → ffmpeg invoked with acrossfade filter.
+- [ ] TC-150: Both `gap_ms > 0` and `crossfade_ms > 0` → mutual-exclusion error; no ffmpeg.
+- [ ] TC-151: Mocked ffmpeg nonzero exit → `Audio merge failed: {stderr_excerpt}.`
+- [ ] TC-152: `imageio_ffmpeg.get_ffmpeg_exe()` is called to resolve binary (no system ffmpeg).
+- [ ] TC-153: `output_format="ogg"` → `Invalid output format: "ogg". Supported formats: mp3, wav.`
+
+#### Rollback
+Revert `audio_ops.py`, the `merge_audio_files` handler and registration in `tools.py` / `server.py`, the `MERGE_SUPPORTED_EXTENSIONS` constant addition, and all new tests. Remove `imageio-ffmpeg` dep with `uv remove imageio-ffmpeg`. No DB or migration concerns.
+
+---
 ## Dependency Graph
 
 ```
@@ -1545,6 +1613,9 @@ ISSUE-028 (docs/README reframe + env→param migration + 0.2.0 release)  [needs 
 | US-016 (single custom voice detail) | ISSUE-026 |
 | US-017 (usage history + voice usage) | ISSUE-027 |
 | v0.3 docs/release (composable toolkit framing + migration) | ISSUE-028 |
+| US-018 (merge multiple TTS outputs) | ISSUE-029 |
+| FR-023 (merge_audio_files tool) | ISSUE-029 |
+| NFR-010 (ffmpeg bundling & availability) | ISSUE-029 |
 
 **Orphaned requirements:** None. All FRs, user stories, and NFRs are covered.
 

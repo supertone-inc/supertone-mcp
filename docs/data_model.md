@@ -478,6 +478,61 @@ Since there is no database, "query patterns" here describe the data access seque
 
 ---
 
+### v0.4 additions — `merge_audio_files` (ISSUE-029)
+
+#### Entity: MergeRequest
+
+Input parameters for `merge_audio_files`, validated in `tools.py` before any file I/O or ffmpeg invocation.
+
+```python
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class MergeRequest:
+    """Validated parameters for a merge_audio_files tool call."""
+    input_paths: list[str]       # Expanded, absolute paths; min length 2
+    gap_ms: int = 0              # Silence gap at each junction; >= 0
+    crossfade_ms: int = 0        # Crossfade blend at each junction; >= 0
+    output_format: str | None = None  # "mp3" | "wav" | None (auto)
+```
+
+**Validation rules:**
+
+| Field | Rule | Error message |
+|-------|------|---------------|
+| `input_paths` | `len < 1` | `Input file list must not be empty.` |
+| `input_paths[i]` | File does not exist | `Audio file not found: {path}.` |
+| `input_paths[i]` | Extension not `.mp3` / `.wav` | `Unsupported format: "{ext}". Supported: mp3, wav.` |
+| `gap_ms` + `crossfade_ms` | Both `> 0` | `gap_ms and crossfade_ms are mutually exclusive. Set one to 0.` |
+| `output_format` | Not `None`, `"mp3"`, or `"wav"` | `Invalid output format: "{value}". Supported formats: mp3, wav.` |
+
+**Auto output_format logic:**
+- If all `input_paths` share the same extension → use that extension.
+- If mixed extensions → default to `"mp3"`.
+- An explicit `output_format` overrides auto-detection.
+
+All validations happen BEFORE any ffmpeg subprocess invocation (fail-fast).
+
+#### Access Pattern: merge_audio_files (full flow)
+
+- **Used by:** `merge_audio_files` MCP tool (ISSUE-029)
+- **Sequence:**
+  1. Read `SUPERTONE_API_KEY` — not needed (no Supertone API call); skip.
+  2. Validate `input_paths`: non-empty list, each path exists, each extension is `.mp3` or `.wav`.
+  3. Validate mutual exclusion: `gap_ms == 0 or crossfade_ms == 0`.
+  4. Determine `output_format` (explicit override or auto-detection).
+  5. If `len(input_paths) == 1`: passthrough — compute duration and return the single path.
+  6. Resolve `output_dir` from env var, expand `~`, `mkdir -p` (reuse FR-004 pattern).
+  7. Generate output filename: `{YYYY-MM-DD}_{uuid8}.{output_format}` (reuse existing `generate_output_path()`).
+  8. Invoke `audio_ops.merge_audio(input_paths, gap_ms, crossfade_ms, output_format)` → `(bytes, ext)`.
+  9. Write bytes to the generated output path.
+  10. Calculate duration from saved file (reuse `calculate_duration()`).
+  11. Return formatted plain-text response with absolute path, duration, input count, and format.
+- **Expected data size:** Sum of input file sizes (typically 1–20 MB).
+- **Performance:** Dominated by ffmpeg subprocess time (proportional to total audio length). Server overhead < 100ms excluding ffmpeg.
+
+---
+
 ## Migrations
 
 Not applicable. There is no database, no schema evolution, no versioned state.

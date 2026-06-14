@@ -139,6 +139,24 @@
 - [ ] Given `edit_custom_voice(voice_id="x")` is called with neither `name` nor `description`, then `At least one of name or description must be provided.` is returned.
 - [ ] Given `delete_custom_voice(voice_id="x")` is called, then `Custom voice deleted. voice_id: x.` is returned. No confirm gate is enforced (v0.2 product decision); the tool description warns the action is irreversible.
 
+### Must (added in v0.4 — audio assembly)
+
+#### US-018: Merge Multiple TTS Outputs
+**As an** MCP user (LLM), **I want** to merge several audio files (produced by multiple `text_to_speech` calls) into a single audio file using ffmpeg, **so that** I can produce a single deliverable from multi-segment TTS workflows.
+
+**Acceptance Criteria:**
+- [ ] Given a list of two or more valid audio file paths, when `merge_audio_files` is called with no gap/crossfade args, then the files are concatenated head-to-tail and a merged file path is returned.
+- [ ] Given `gap_ms > 0`, when called, then silence of that duration is inserted between each junction.
+- [ ] Given `crossfade_ms > 0`, when called, then the audio clips are blended at each junction for the specified duration.
+- [ ] Given both `gap_ms > 0` and `crossfade_ms > 0`, when called, then a validation error is returned and no file is produced.
+- [ ] Given a single input path, when called, then the file is returned as-is (passthrough; no ffmpeg invocation needed).
+- [ ] Given a file path that does not exist, when called, then a clear error is returned before invoking ffmpeg.
+- [ ] Given an unsupported extension (not `.mp3` or `.wav`), when called, then a validation error is returned.
+- [ ] Given all inputs have the same extension, when called, then the output uses that extension; if mixed, output defaults to `.mp3`.
+- [ ] Given an explicit `output_format` override, when called, then the output uses that format.
+- [ ] Given ffmpeg exits non-zero, when called, then an actionable error string is returned.
+- [ ] Given an empty input list, when called, then an error is returned.
+
 ### Must (added in v0.3 — composable SDK toolkit pivot)
 
 #### US-012: Per-Call Output Mode
@@ -314,6 +332,22 @@
 - **Dependencies:** FR-003.
 
 ### Feature Area: SDK 0.2.3 Surface Expansion (v0.3)
+
+#### FR-023: `merge_audio_files` MCP Tool
+- **Description:** Expose an MCP tool named `merge_audio_files` that uses ffmpeg (bundled via `imageio-ffmpeg`) to concatenate two or more audio files into a single output file. Supports three operations: plain head-to-tail concat, concat with silence gap, and concat with crossfade. `gap_ms` and `crossfade_ms` are mutually exclusive.
+- **Priority:** Must (v0.4)
+- **Parameters:** `input_paths` (list[str], required, min 2; absolute or `~`-expanded paths), `gap_ms` (int, default 0), `crossfade_ms` (int, default 0), `output_format` (str, optional; `mp3` or `wav`; auto-detected if omitted).
+- **Acceptance Criteria:**
+  - Two or more valid files → merged file saved to `SUPERTONE_OUTPUT_DIR`, absolute path and duration returned.
+  - Single file → passthrough (no ffmpeg invocation; returns path and duration).
+  - Empty input list → `Input file list must not be empty.`
+  - Nonexistent path → `Audio file not found: {path}.` (fail-fast, before ffmpeg).
+  - Unsupported extension → `Unsupported format: "{ext}". Supported: mp3, wav.`
+  - Both `gap_ms` > 0 and `crossfade_ms` > 0 → `gap_ms and crossfade_ms are mutually exclusive. Set one to 0.`
+  - Output format auto-detected: all inputs same ext → use that ext; mixed → `.mp3`; explicit `output_format` overrides.
+  - ffmpeg nonzero exit → `Audio merge failed: {stderr_excerpt}.`
+- **Implementation:** ffmpeg binary resolved via `imageio_ffmpeg.get_ffmpeg_exe()`; invoked via `asyncio.create_subprocess_exec`. No system ffmpeg dependency.
+- **Dependencies:** FR-004 (output dir reuse), FR-001 (naming convention reuse).
 
 #### FR-020: `get_custom_voice` MCP Tool
 - **Description:** Expose an MCP tool named `get_custom_voice` that fetches the detail of a single custom (cloned) voice via `custom_voices.get_custom_voice_async`. (Deferred in v0.2; promoted in v0.3 because SDK 0.2.3 provides the method.)
@@ -494,6 +528,14 @@
 - **Measurable Target:** Uses `httpx.AsyncClient` for all API calls. No blocking I/O on the event loop.
 - **Priority:** Should
 
+#### NFR-010: ffmpeg Bundling and Availability (v0.4)
+- **Description:** The ffmpeg binary used by `merge_audio_files` must be bundled with the Python package so that `uvx supertone-mcp` remains zero-config. No system ffmpeg installation must be required.
+- **Measurable Target:**
+  - `imageio-ffmpeg>=0.5` is listed as a project dependency in `pyproject.toml` (added via `uv add imageio-ffmpeg`).
+  - `imageio_ffmpeg.get_ffmpeg_exe()` resolves a valid executable path at runtime.
+  - CI tests mock the ffmpeg subprocess; no real ffmpeg binary is required in the CI environment.
+- **Priority:** Must (v0.4)
+
 #### NFR-009: Behavior Controlled by Parameters, Not Env Vars (v0.3)
 - **Description:** All tool *behavior* must be controllable via per-call parameters; environment variables are reserved for authentication and stable defaults only. The SDK dependency must be version-pinned so SDK additions cannot silently desync validation.
 - **Measurable Target:**
@@ -511,6 +553,7 @@ The following are explicitly excluded from v0.2 per PRD Section 3:
 1. **STT (Speech-to-Text)** -- incompatible with MCP's tool-calling architecture.
 2. **Voice conversation interface** (STT -> LLM -> TTS pipeline) -- separate project.
 3. **Batch conversion** (`batch_tts`) -- deferred to v0.3+.
+3a. **Audio mix/overlay** (`mix_audio_files`) -- deferred to a future issue; v0.4 scope is concat only.
 4. **Multi-file voice cloning** (multi-sample upload) -- v0.2 supports single file only; deferred to v0.3+.
 5. **Local audio autoplay** for `preview_voice` -- v0.2 returns URLs only; autoplay is the responsibility of the future v0.3 `play_audio_url` tool.
 6. **`list_models` tool** (TTS model catalog) -- deferred to v0.3+.
@@ -585,3 +628,4 @@ The following are explicitly excluded from v0.2 per PRD Section 3:
 | US-010 (v0.2) | FR-016, FR-005, FR-006, FR-003, FR-007 | NFR-004 |
 | US-011 (v0.2) | FR-017, FR-018, FR-019, FR-003, FR-007 | NFR-004, NFR-007 |
 | -- | FR-009, FR-010, FR-011 | NFR-001, NFR-002, NFR-005, NFR-006, NFR-007 |
+| US-018 (v0.4) | FR-023, FR-004 | NFR-010, NFR-004, NFR-005 |

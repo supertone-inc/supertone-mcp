@@ -105,6 +105,15 @@ The v0.3 pivot does not add new top-level Python modules; it extends `tools.py`,
 | Get custom voice | `custom_voices` | `get_custom_voice_async` | `get_custom_voice` (FR-020) |
 | Usage history | `usage` | `get_usage_async` | `get_usage_history` (FR-021) |
 | Voice usage | `usage` | `get_voice_usage_async` | `get_voice_usage` (FR-022) |
+| Merge audio (concat) | N/A — ffmpeg subprocess | `imageio_ffmpeg.get_ffmpeg_exe()` + `asyncio.create_subprocess_exec` | `merge_audio_files` (FR-023) |
+
+### Module: `audio_ops` (`audio_ops.py`) — v0.4, new
+
+- **Responsibility:** Low-level ffmpeg subprocess wrapper for audio concatenation operations. Returns merged audio bytes and the chosen output extension. Keeps all ffmpeg-specific logic isolated from the tool handler.
+- **Dependencies:** `imageio_ffmpeg` (for binary discovery), `asyncio` (subprocess execution). No Supertone SDK dependency.
+- **Key interfaces:**
+  - `async merge_audio(input_paths: list[str], gap_ms: int, crossfade_ms: int, output_format: str) -> tuple[bytes, str]` — Discovers the ffmpeg binary via `imageio_ffmpeg.get_ffmpeg_exe()`, builds the ffmpeg command (concat demuxer for plain concat; `aevalsrc=0` silence for gap; `acrossfade` filter for crossfade), invokes via `asyncio.create_subprocess_exec`, collects stdout bytes, raises `SubprocessError` on nonzero exit with stderr excerpt.
+- **Design decision:** Returns `bytes` rather than writing the file, so `tools.py` retains sole responsibility for file I/O and filename generation (consistent with other tools).
 
 ### Module: `__init__.py`
 
@@ -372,6 +381,8 @@ jobs:
 | Invalid API key | 401 from API | Total | Return "Authentication failed. Please verify your SUPERTONE_API_KEY." |
 | Rate limited | 429 from API | Temporary | Return rate limit message; user retries manually |
 | MCP SDK bug | Server crash | Total | Pinned SDK version mitigates; user can downgrade package version |
+| ffmpeg subprocess nonzero exit | `merge_audio_files` fails | Partial (other tools unaffected) | Capture stderr, surface excerpt in user-facing error: `Audio merge failed: {stderr_excerpt}.` |
+| ffmpeg binary missing (imageio-ffmpeg not installed) | `merge_audio_files` fails at import | Partial | `imageio-ffmpeg` is a declared project dep; missing only if dep resolution fails. Error surfaced as import-time exception, caught in tool handler. |
 
 ---
 
@@ -402,6 +413,7 @@ This section is included because the PRD mentions future features (v2) that coul
 | Default voice | Hardcoded voice ID constant | Fetch first voice at startup | Hardcoded is simpler and does not require an API call at startup. Downside: if the voice ID changes or is removed, it breaks. Mitigated by clear error message. Needs stakeholder input to determine the ID (Assumption A4). |
 | Logging destination | stderr | File logging, structured JSON to file | MCP uses stdout for protocol messages. stderr is the only safe destination. File logging adds configuration complexity unnecessary for a CLI tool. |
 | SDK version pinning | Pin minor version (`>=1.0,<2.0`) | Pin exact version, unpinned | Exact pin breaks on patch updates; unpinned risks breaking changes. Minor-version range balances stability with patch fixes. |
+| ffmpeg distribution | Bundle via `imageio-ffmpeg` (add with `uv add imageio-ffmpeg`) | System ffmpeg dependency | Bundling keeps `uvx supertone-mcp` zero-config (NFR-001). System ffmpeg is unavailable in many CI/LLM-host environments and varies by version/path. |
 
 ---
 

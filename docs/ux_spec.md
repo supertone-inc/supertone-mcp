@@ -33,10 +33,13 @@ supertone-tts (MCP Server)
 |   +-- get_credit_balance   Remaining credits.
 |
 +-- Voice cloning (custom voices)
-    +-- clone_voice          Create a cloned voice from a local audio file (≤3MB, wav/mp3).
-    +-- search_custom_voice  List user's own custom voices.
-    +-- edit_custom_voice    Rename or update description of a custom voice.
-    +-- delete_custom_voice  Permanently delete a custom voice (irreversible).
+|   +-- clone_voice          Create a cloned voice from a local audio file (≤3MB, wav/mp3).
+|   +-- search_custom_voice  List user's own custom voices.
+|   +-- edit_custom_voice    Rename or update description of a custom voice.
+|   +-- delete_custom_voice  Permanently delete a custom voice (irreversible).
+|
++-- Audio assembly (v0.4)
+    +-- merge_audio_files    Concatenate two or more audio files (gap or crossfade optional).
 ```
 
 > Note: v0.1 had only `text_to_speech` and `list_voices`. v0.2 removes `list_voices` (breaking change) and adds nine new tools (one replacement + eight new).
@@ -206,6 +209,22 @@ Permanently delete a custom (cloned) voice. THIS IS IRREVERSIBLE — once delete
 | Parameter | Description |
 |-----------|-------------|
 | `voice_id` | Custom voice identifier to delete. Required. |
+
+### 2.16 `merge_audio_files` (v0.4)
+
+**Tool description:**
+```
+Merge two or more local audio files into a single file using ffmpeg. Supports plain concatenation, silence-gap insertion between clips (gap_ms), or crossfade blending (crossfade_ms). gap_ms and crossfade_ms are mutually exclusive. Output format is auto-detected from the inputs (all-same-ext → that ext; mixed → mp3) or overridden via output_format.
+```
+
+**Parameter descriptions:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `input_paths` | List of absolute or ~-prefixed paths to audio files (mp3 or wav). Minimum 2 files. Required. |
+| `gap_ms` | Silence duration (milliseconds) inserted at each junction. Default 0. Mutually exclusive with crossfade_ms. |
+| `crossfade_ms` | Crossfade blend duration (milliseconds) at each junction. Default 0. Mutually exclusive with gap_ms. |
+| `output_format` | Force output format: "mp3" or "wav". If omitted, auto-detected from inputs. |
 
 ---
 
@@ -761,6 +780,47 @@ Retrieve usage for a specific voice by voice_id.
 | `voice_id` empty | `voice_id must not be empty.` |
 | API key / auth / rate / 5xx / network | Same as §4.3. |
 
+### 4.16 `merge_audio_files` (v0.4)
+
+#### Success State
+
+**Input example:**
+```json
+{
+  "input_paths": ["/output/2026-06-14_a1b2c3d4.mp3", "/output/2026-06-14_e5f6g7h8.mp3"],
+  "gap_ms": 500
+}
+```
+
+**Output format:**
+```
+Merged audio saved: /Users/username/supertone-tts-output/2026-06-14_a1b2c3d4.mp3
+Duration: 5.7 seconds
+Inputs: 2
+Format: mp3
+```
+
+#### Edge States
+
+| Condition | Behavior |
+|-----------|----------|
+| Single input file | Returned as-is; no ffmpeg invocation. Output message mirrors the single-file path. |
+| All inputs have the same extension | Output uses that extension. |
+| Mixed extensions (e.g., .mp3 + .wav) | Output defaults to `.mp3`. |
+| Explicit `output_format` | Overrides auto-detection. |
+
+#### Error States
+
+| Error Condition | Output Message |
+|----------------|----------------|
+| Empty input list | `Input file list must not be empty.` |
+| File not found | `Audio file not found: {path}.` |
+| Unsupported extension | `Unsupported format: "{ext}". Supported: mp3, wav.` |
+| Both gap_ms and crossfade_ms set | `gap_ms and crossfade_ms are mutually exclusive. Set one to 0.` |
+| Invalid output_format | `Invalid output format: "{value}". Supported formats: mp3, wav.` |
+| ffmpeg nonzero exit | `Audio merge failed: {stderr_excerpt}.` |
+| Output dir permission error | `Cannot write to output directory: {path}. Please check directory permissions or set SUPERTONE_OUTPUT_DIR to a writable location.` |
+
 ---
 
 ## 5. Error Message Copy Guidelines
@@ -890,3 +950,5 @@ The tool itself is stateless -- it does not remember previous calls. The LLM mai
 | Output directory error message | FR-004, NFR-004 |
 | Absolute file path in output | FR-001 |
 | Plain text output format | NFR-004 (clarity) |
+| `merge_audio_files` tool description & params (§2.16) | FR-023, US-018 |
+| `merge_audio_files` input/output states (§4.16) | FR-023, US-018, NFR-004, NFR-010 |
