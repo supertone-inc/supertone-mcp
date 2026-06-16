@@ -16,14 +16,14 @@ fields below are reused verbatim across the other directories' submission forms.
 | Registry name | `io.github.supertone-inc/supertone-mcp` |
 | Display name / title | Supertone TTS |
 | PyPI package | `supertone-mcp` |
-| Latest version | `0.1.1` |
+| Latest version | `0.3.0` |
 | Repository | https://github.com/supertone-inc/supertone-mcp |
 | Homepage | https://supertone.ai |
 | Transport | `stdio` |
 | Language / runtime | Python (≥3.12) |
 | Scope | Local service (runs on the user's machine) |
 | License | MIT |
-| Tool count | 10 |
+| Tool count | 14 |
 | Categories / tags | text-to-speech, tts, audio, voice, speech-synthesis, voice-cloning, korean |
 
 **Short description (≤100 chars, registry-validated):**
@@ -41,20 +41,21 @@ Desktop, Cursor, or any MCP-compatible client. Supports Korean, English, Japanes
 20+ other languages, with speed, pitch, and emotion-style control.
 ```
 
-**Tools (10):**
+**Tools (14):**
 `text_to_speech`, `predict_duration`, `search_voice`, `get_voice`, `preview_voice`,
-`get_credit_balance`, `clone_voice`, `search_custom_voice`, `edit_custom_voice`,
-`delete_custom_voice`
+`get_credit_balance`, `clone_voice`, `search_custom_voice`, `get_custom_voice`,
+`edit_custom_voice`, `delete_custom_voice`, `get_usage_history`, `get_voice_usage`,
+`merge_audio_files`
 
 **Environment variables:**
 
 | Variable | Required | Notes |
 |---|---|---|
 | `SUPERTONE_API_KEY` | Yes | Supertone API key |
-| `SUPERTONE_MCP_VOICE_ID` | No | Default voice_id |
+| `SUPERTONE_MCP_VOICE_ID` | No | Default voice_id for `text_to_speech` / `predict_duration` |
 | `SUPERTONE_OUTPUT_DIR` | No | Audio output dir (default `~/supertone-tts-output/`) |
-| `SUPERTONE_MCP_OUTPUT_MODE` | No | `files` / `resources` / `both` |
-| `SUPERTONE_MCP_AUTOPLAY` | No | Auto-play on macOS (default `true`) |
+
+> `SUPERTONE_MCP_OUTPUT_MODE` and `SUPERTONE_MCP_AUTOPLAY` were removed in 0.2.0. Use the `output_mode` and `autoplay` per-call parameters instead.
 
 ---
 

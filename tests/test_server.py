@@ -609,3 +609,27 @@ class TestUsageToolsRegistration:
         desc = tool.description.lower()
         assert "usage" in desc
         assert "voice" in desc
+
+
+class TestMergeAudioFilesRegistration:
+    """ISSUE-029: merge_audio_files tool registration + schema."""
+
+    def test_merge_audio_files_tool_exists(self):
+        tools = mcp._tool_manager._tools
+        assert "merge_audio_files" in tools
+
+    def test_merge_audio_files_has_expected_parameters(self):
+        tool = mcp._tool_manager._tools["merge_audio_files"]
+        props = tool.parameters["properties"]
+        for name in ("input_paths", "gap_ms", "crossfade_ms", "output_format"):
+            assert name in props, f"missing parameter: {name}"
+
+    def test_merge_audio_files_input_paths_required(self):
+        tool = mcp._tool_manager._tools["merge_audio_files"]
+        assert "input_paths" in tool.parameters.get("required", [])
+
+    def test_merge_audio_files_description_mentions_merge(self):
+        tool = mcp._tool_manager._tools["merge_audio_files"]
+        desc = tool.description.lower()
+        assert "merge" in desc
+        assert "ffmpeg" in desc

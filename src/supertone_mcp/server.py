@@ -446,6 +446,46 @@ async def get_voice_usage(voice_id: str) -> str:
     return await tools.get_voice_usage(voice_id=voice_id)
 
 
+@mcp.tool(
+    name="merge_audio_files",
+    description=(
+        "Merge two or more local audio files into a single file using ffmpeg. "
+        "Supports plain concatenation, silence-gap insertion between clips "
+        "(gap_ms), or crossfade blending (crossfade_ms). gap_ms and "
+        "crossfade_ms are mutually exclusive. Output format is auto-detected "
+        "from the inputs (all-same-ext -> that ext; mixed -> mp3) or "
+        "overridden via output_format. Use this to stitch multiple "
+        "text_to_speech outputs into one deliverable."
+    ),
+)
+async def merge_audio_files(
+    input_paths: list[str],
+    gap_ms: int = 0,
+    crossfade_ms: int = 0,
+    output_format: str | None = None,
+) -> str:
+    """Merge two or more local audio files into a single file using ffmpeg.
+
+    Args:
+        input_paths: List of absolute or ~-prefixed paths to audio files
+            (mp3 or wav). Minimum 2 files to merge (a single file is returned
+            as-is). Required.
+        gap_ms: Silence duration (milliseconds) inserted at each junction.
+            Default 0. Mutually exclusive with crossfade_ms.
+        crossfade_ms: Crossfade blend duration (milliseconds) at each junction.
+            Default 0. Mutually exclusive with gap_ms.
+        output_format: Force output format: "mp3" or "wav". If omitted, the
+            format is auto-detected from the inputs (all-same-ext -> that ext;
+            mixed -> mp3).
+    """
+    return await tools.merge_audio_files(
+        input_paths=input_paths,
+        gap_ms=gap_ms,
+        crossfade_ms=crossfade_ms,
+        output_format=output_format,
+    )
+
+
 def main() -> None:
     """Start the Supertone TTS MCP server."""
     mcp.run(transport="stdio")

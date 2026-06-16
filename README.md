@@ -26,6 +26,9 @@ Covers Korean, English, Japanese, and **31 languages** total. Speed (0.5x–2.0x
 - **`edit_custom_voice`** — Update name and/or description.
 - **`delete_custom_voice`** — Permanently delete (irreversible).
 
+**Audio assembly**
+- **`merge_audio_files`** — Concatenate two or more local audio files (mp3/wav) into one via a bundled ffmpeg. Supports plain concat, silence gaps between clips (`gap_ms`), or crossfade blending (`crossfade_ms`). Output format auto-detected (mixed → mp3) or forced via `output_format`. No system ffmpeg required.
+
 **Usage & credits**
 - **`get_credit_balance`** — Remaining credits.
 - **`get_usage_history`** — Usage over a time window.
@@ -202,6 +205,15 @@ All parameters optional. With no filters → full catalog. With any filter → f
 | `get_credit_balance` | — | — |
 | `get_usage_history` | — | — (reports a recent default window) |
 | `get_voice_usage` | `voice_id` | — |
+
+### `merge_audio_files`
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `input_paths` | string[] | Yes | Two or more local mp3/wav paths (`~` expansion supported). A single file is returned as-is |
+| `gap_ms` | int | No | Silence (ms) inserted at each junction. Default `0`. Mutually exclusive with `crossfade_ms` |
+| `crossfade_ms` | int | No | Crossfade blend (ms) at each junction. Default `0`. Mutually exclusive with `gap_ms` |
+| `output_format` | string | No | Force `mp3` or `wav`. If omitted: all-same-ext → that ext; mixed → `mp3` |
 
 ## Development
 

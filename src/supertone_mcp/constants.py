@@ -116,6 +116,12 @@ DEFAULT_OUTPUT_MODE: str = OUTPUT_MODE_FILES
 # carries the False default directly.
 DEFAULT_AUTOPLAY: bool = False
 
+# --- ISSUE-029: merge_audio_files constraints ---
+# Audio formats accepted by merge_audio_files (matches SUPPORTED_FORMATS; kept
+# as a distinct name so the merge surface can diverge later without touching
+# the TTS output formats).
+MERGE_SUPPORTED_EXTENSIONS: list[str] = ["mp3", "wav"]
+
 # --- ISSUE-019: clone_voice constraints ---
 # Per FR-017 / UX spec §2.8: WAV/MP3 only, exactly one file, ≤3MB.
 MAX_AUDIO_FILE_BYTES: int = 3 * 1024 * 1024

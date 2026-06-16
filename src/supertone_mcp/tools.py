@@ -12,6 +12,7 @@ from pathlib import Path
 from mcp.types import AudioContent, TextContent
 from mutagen import File as MutagenFile
 
+from supertone_mcp.audio_ops import merge_audio
 from supertone_mcp.constants import (
     DEFAULT_FORMAT,
     DEFAULT_LANGUAGE,
@@ -22,6 +23,7 @@ from supertone_mcp.constants import (
     DEFAULT_SPEED,
     DEFAULT_VOICE_ID,
     MAX_AUDIO_FILE_BYTES,
+    MERGE_SUPPORTED_EXTENSIONS,
     OUTPUT_MODE_BOTH,
     OUTPUT_MODE_FILES,
     OUTPUT_MODE_RESOURCES,
@@ -1526,3 +1528,117 @@ async def get_voice_usage(voice_id: str) -> str:
         await client.aclose()
 
     return format_voice_usage(usage)
+
+
+# --- merge_audio_files (ISSUE-029) ---
+
+
+def _resolve_merge_output_format(
+    input_paths: list[str], output_format: str | None
+) -> str:
+    """Decide the merge output extension.
+
+    Precedence (per SPEC-029 / UX spec §2.16):
+      1. An explicit `output_format` (already enum-validated) wins.
+      2. All inputs share one extension -> use that extension.
+      3. Mixed extensions -> default to "mp3".
+    """
+    if output_format is not None:
+        return output_format
+    exts = {Path(p).suffix.lower().lstrip(".") for p in input_paths}
+    if len(exts) == 1:
+        return next(iter(exts))
+    return "mp3"
+
+
+async def merge_audio_files(
+    input_paths: list[str],
+    gap_ms: int = 0,
+    crossfade_ms: int = 0,
+    output_format: str | None = None,
+) -> str:
+    """Merge two or more local audio files into one via a bundled ffmpeg.
+
+    Performs all fail-fast validation BEFORE spawning any subprocess (empty
+    list, gap/crossfade mutual exclusion, output-format enum, per-file
+    existence + extension). A single input is returned as-is (no ffmpeg).
+    The merged audio is written to the resolved output directory using the
+    standard `{YYYY-MM-DD}_{uuid8}.{ext}` naming, and a plain-text summary
+    (path, duration, input count, format) is returned.
+
+    Never raises to the caller — every error path returns a string, matching
+    the other tool handlers in this module.
+    """
+    # 1. Empty list — fail fast, no ffmpeg.
+    if not input_paths:
+        return "Input file list must not be empty."
+
+    # 2. gap_ms / crossfade_ms must be non-negative. A negative value would
+    # otherwise silently fall through to plain concat (the > 0 mode guards),
+    # dropping the user's requested gap/crossfade with a success message.
+    if gap_ms < 0 or crossfade_ms < 0:
+        return "gap_ms and crossfade_ms must be non-negative."
+
+    # 3. gap_ms and crossfade_ms are mutually exclusive.
+    if gap_ms > 0 and crossfade_ms > 0:
+        return "gap_ms and crossfade_ms are mutually exclusive. Set one to 0."
+
+    # 4. Output format enum — only when explicitly provided.
+    if output_format is not None and output_format not in SUPPORTED_FORMATS:
+        return f'Invalid output format: "{output_format}". Supported formats: mp3, wav.'
+
+    # 5. Per-file existence + extension checks (before any ffmpeg invocation).
+    resolved_paths: list[str] = []
+    for raw in input_paths:
+        p = Path(raw).expanduser()
+        if not p.is_file():
+            return f"Audio file not found: {p}."
+        ext = p.suffix.lower()
+        if ext.lstrip(".") not in MERGE_SUPPORTED_EXTENSIONS:
+            return f'Unsupported format: "{ext}". Supported: mp3, wav.'
+        resolved_paths.append(str(p))
+
+    # 6. Single-file passthrough — nothing to merge, no ffmpeg.
+    if len(resolved_paths) == 1:
+        return f"Audio file returned as-is (single input): {resolved_paths[0]}"
+
+    # 7. Resolve output format + output directory.
+    resolved_format = _resolve_merge_output_format(resolved_paths, output_format)
+    try:
+        output_dir = resolve_output_dir()
+        ensure_output_dir(output_dir)
+    except ValueError as e:
+        return str(e)
+
+    # 8. Merge via ffmpeg (mocked in tests).
+    try:
+        audio_bytes, ext = await merge_audio(
+            input_paths=resolved_paths,
+            gap_ms=gap_ms,
+            crossfade_ms=crossfade_ms,
+            output_format=resolved_format,
+        )
+    except RuntimeError as e:
+        return f"Audio merge failed: {e}."
+
+    # 8. Write bytes to disk + format the response.
+    output_path = generate_output_path(output_dir, ext)
+    try:
+        with open(output_path, "wb") as fh:
+            fh.write(audio_bytes)
+    except PermissionError:
+        return (
+            f"Cannot write to output directory: {output_path.parent}. "
+            "Please check directory permissions or set SUPERTONE_OUTPUT_DIR "
+            "to a writable location."
+        )
+    except OSError:
+        return "Cannot write audio file. Please check available disk space."
+
+    duration = calculate_duration(str(output_path))
+    return (
+        f"Merged audio saved: {output_path}\n"
+        f"Duration: {duration} seconds\n"
+        f"Inputs: {len(resolved_paths)}\n"
+        f"Format: {ext}"
+    )
