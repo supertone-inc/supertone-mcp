@@ -38,6 +38,8 @@
 | ISSUE-027 | New usage tools get_usage_history + get_voice_usage | P2 | 1d | ISSUE-021 | done |
 | ISSUE-028 | Docs/README reframe + env→param migration + 0.2.0 release | P2 | 1d | ISSUE-021..ISSUE-027 | done |
 | ISSUE-029 | Add merge_audio_files tool (ffmpeg-backed audio concatenation) | P2 | 1.5d | - | done |
+| ISSUE-030 | Real-ffmpeg integration test tier for merge_audio_files | P3 | 0.5d | ISSUE-029 | backlog |
+| ISSUE-031 | Harden _pipe_format to reject unknown output formats | P3 | 0.5d | ISSUE-029 | backlog |
 
 ---
 
@@ -1471,6 +1473,63 @@ Add a `merge_audio_files` MCP tool backed by a bundled ffmpeg binary that concat
 
 #### Rollback
 Revert `audio_ops.py`, the `merge_audio_files` handler and registration in `tools.py` / `server.py`, the `MERGE_SUPPORTED_EXTENSIONS` constant addition, and all new tests. Remove `imageio-ffmpeg` dep with `uv remove imageio-ffmpeg`. No DB or migration concerns.
+
+### ISSUE-030: Real-ffmpeg integration test tier for merge_audio_files
+- Track: platform
+- PRD-Ref: NFR-010
+- Priority: P3
+- Estimate: 0.5d
+- Status: backlog
+- Owner: -
+- Branch:
+- GH-Issue: https://github.com/supertone-inc/supertone-mcp/issues/50
+- PR:
+- Depends-On: ISSUE-029
+- Spec-Required: false
+
+#### Goal
+Add an opt-in (CI-skipped) real-ffmpeg integration test tier for merge_audio_files so the filter-graph / parameter-compatibility contract is pinned by a test that actually runs the bundled ffmpeg, not just the mocked unit tests.
+
+#### Scope (In/Out)
+- In: a pytest marker (e.g. `@pytest.mark.integration`) or env-gated test that generates heterogeneous fixtures (e.g. 44100/stereo mp3 + 24000/mono wav), runs real `merge_audio` for concat/gap/crossfade, asserts non-empty decodable output; marker excluded from default CI; documented in docs/test_plan.md.
+- Out: running real ffmpeg in the default CI matrix; perceptual/quality assertions.
+
+#### Acceptance Criteria (DoD)
+- [ ] A real-ffmpeg test passes locally for all three modes on heterogeneous inputs.
+- [ ] Default `uv run pytest` (CI) does NOT run it (marker/skip); CI stays binary-free.
+- [ ] docs/test_plan.md documents how to run the integration tier.
+
+#### Notes
+Non-blocking follow-up from PR #49 (ISSUE-029); review lesson RL-007. See docs/test_plan.md TC-156.
+
+---
+
+### ISSUE-031: Harden _pipe_format to reject unknown output formats
+- Track: product
+- PRD-Ref: FR-023
+- Priority: P3
+- Estimate: 0.5d
+- Status: backlog
+- Owner: -
+- Branch:
+- GH-Issue: https://github.com/supertone-inc/supertone-mcp/issues/51
+- PR:
+- Depends-On: ISSUE-029
+- Spec-Required: false
+
+#### Goal
+Make `audio_ops._pipe_format` fail loudly on an unknown output format instead of silently mapping anything non-`wav` to `mp3`.
+
+#### Scope (In/Out)
+- In: convert `_pipe_format` to an explicit mapping that raises on an unsupported format; add a unit test for the unknown-format path.
+- Out: adding any new output format.
+
+#### Acceptance Criteria (DoD)
+- [ ] `_pipe_format("ogg")` (or any non-mp3/wav) raises rather than returning `"mp3"`.
+- [ ] Existing mp3/wav behavior unchanged; a test covers the raise path.
+
+#### Notes
+Non-blocking defensive follow-up from PR #49 (ISSUE-029); review finding L1. `MERGE_SUPPORTED_EXTENSIONS` exists so the merge surface can diverge later — this guards that path.
 
 ---
 ## Dependency Graph
