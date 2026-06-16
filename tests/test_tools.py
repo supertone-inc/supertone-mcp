@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcp.types import AudioContent, TextContent
-
 from supertone_mcp.exceptions import (
     SupertoneAuthError,
     SupertoneConnectionError,
@@ -26,6 +25,7 @@ from supertone_mcp.tools import (
     format_voice_samples,
     get_credit_balance,
     get_voice,
+    merge_audio_files,
     preview_voice,
     resolve_api_key,
     resolve_output_dir,
@@ -4877,3 +4877,161 @@ class TestGetVoiceUsageHandler:
             result = await get_voice_usage(voice_id="v1")
 
         assert "Failed to connect to Supertone API." in result
+
+
+# --- merge_audio_files (ISSUE-029) ---
+
+
+def _make_audio_file(tmp_path, name: str, data: bytes = b"RIFFFAKEDATA") -> str:
+    """Create a real on-disk file so existence/extension checks pass.
+
+    The bytes are not valid audio; merge is mocked in handler tests, and
+    duration falls back to 0.0 via mutagen for these fixtures.
+    """
+    p = tmp_path / name
+    p.write_bytes(data)
+    return str(p)
+
+
+class TestMergeAudioFilesValidation:
+    """Fail-fast validation paths — no ffmpeg/merge_audio call must occur."""
+
+    async def test_empty_list_returns_error(self):
+        with patch("supertone_mcp.tools.merge_audio", new=AsyncMock()) as m:
+            result = await merge_audio_files(input_paths=[])
+        assert result == "Input file list must not be empty."
+        m.assert_not_called()
+
+    async def test_gap_and_crossfade_mutually_exclusive(self, tmp_path):
+        f1 = _make_audio_file(tmp_path, "a.mp3")
+        f2 = _make_audio_file(tmp_path, "b.mp3")
+        with patch("supertone_mcp.tools.merge_audio", new=AsyncMock()) as m:
+            result = await merge_audio_files(
+                input_paths=[f1, f2], gap_ms=500, crossfade_ms=200
+            )
+        assert result == "gap_ms and crossfade_ms are mutually exclusive. Set one to 0."
+        m.assert_not_called()
+
+    async def test_missing_file_returns_error(self, tmp_path):
+        f2 = _make_audio_file(tmp_path, "b.mp3")
+        missing = str(tmp_path / "missing.mp3")
+        with patch("supertone_mcp.tools.merge_audio", new=AsyncMock()) as m:
+            result = await merge_audio_files(input_paths=[missing, f2])
+        assert result == f"Audio file not found: {missing}."
+        m.assert_not_called()
+
+    async def test_unsupported_extension_returns_error(self, tmp_path):
+        f1 = _make_audio_file(tmp_path, "a.ogg")
+        f2 = _make_audio_file(tmp_path, "b.mp3")
+        with patch("supertone_mcp.tools.merge_audio", new=AsyncMock()) as m:
+            result = await merge_audio_files(input_paths=[f1, f2])
+        assert result == 'Unsupported format: ".ogg". Supported: mp3, wav.'
+        m.assert_not_called()
+
+    async def test_invalid_output_format_returns_error(self, tmp_path):
+        f1 = _make_audio_file(tmp_path, "a.mp3")
+        f2 = _make_audio_file(tmp_path, "b.mp3")
+        with patch("supertone_mcp.tools.merge_audio", new=AsyncMock()) as m:
+            result = await merge_audio_files(input_paths=[f1, f2], output_format="ogg")
+        assert result == 'Invalid output format: "ogg". Supported formats: mp3, wav.'
+        m.assert_not_called()
+
+
+class TestMergeAudioFilesHandler:
+    """Happy-path orchestration with merge_audio mocked (no real ffmpeg)."""
+
+    async def test_two_mp3_files_merged(self, tmp_path, monkeypatch):
+        out_dir = tmp_path / "out"
+        monkeypatch.setenv("SUPERTONE_OUTPUT_DIR", str(out_dir))
+        f1 = _make_audio_file(tmp_path, "a.mp3")
+        f2 = _make_audio_file(tmp_path, "b.mp3")
+        with patch(
+            "supertone_mcp.tools.merge_audio",
+            new=AsyncMock(return_value=(b"MERGED", "mp3")),
+        ) as m:
+            result = await merge_audio_files(input_paths=[f1, f2])
+        m.assert_awaited_once()
+        assert "Inputs: 2" in result
+        assert "Format: mp3" in result
+        assert "Duration:" in result
+        # The merged file path must be absolute and exist on disk.
+        assert str(out_dir.resolve()) in result
+
+    async def test_three_wav_files_merged(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SUPERTONE_OUTPUT_DIR", str(tmp_path / "out"))
+        files = [_make_audio_file(tmp_path, f"v{i}.wav") for i in range(3)]
+        with patch(
+            "supertone_mcp.tools.merge_audio",
+            new=AsyncMock(return_value=(b"MERGED", "wav")),
+        ):
+            result = await merge_audio_files(input_paths=files)
+        assert "Inputs: 3" in result
+        assert "Format: wav" in result
+
+    async def test_single_file_passthrough_no_ffmpeg(self, tmp_path):
+        f1 = _make_audio_file(tmp_path, "solo.mp3")
+        with patch("supertone_mcp.tools.merge_audio", new=AsyncMock()) as m:
+            result = await merge_audio_files(input_paths=[f1])
+        m.assert_not_called()
+        assert f1 in result
+
+    async def test_mixed_extensions_default_to_mp3(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SUPERTONE_OUTPUT_DIR", str(tmp_path / "out"))
+        f1 = _make_audio_file(tmp_path, "a.mp3")
+        f2 = _make_audio_file(tmp_path, "b.wav")
+        with patch(
+            "supertone_mcp.tools.merge_audio",
+            new=AsyncMock(return_value=(b"MERGED", "mp3")),
+        ) as m:
+            result = await merge_audio_files(input_paths=[f1, f2])
+        # merge_audio must be asked for mp3 output when inputs are mixed.
+        assert m.await_args.kwargs["output_format"] == "mp3"
+        assert "Format: mp3" in result
+
+    async def test_explicit_output_format_overrides(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SUPERTONE_OUTPUT_DIR", str(tmp_path / "out"))
+        f1 = _make_audio_file(tmp_path, "a.mp3")
+        f2 = _make_audio_file(tmp_path, "b.wav")
+        with patch(
+            "supertone_mcp.tools.merge_audio",
+            new=AsyncMock(return_value=(b"MERGED", "wav")),
+        ) as m:
+            result = await merge_audio_files(input_paths=[f1, f2], output_format="wav")
+        assert m.await_args.kwargs["output_format"] == "wav"
+        assert "Format: wav" in result
+
+    async def test_gap_passed_through_to_merge(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SUPERTONE_OUTPUT_DIR", str(tmp_path / "out"))
+        f1 = _make_audio_file(tmp_path, "a.mp3")
+        f2 = _make_audio_file(tmp_path, "b.mp3")
+        with patch(
+            "supertone_mcp.tools.merge_audio",
+            new=AsyncMock(return_value=(b"MERGED", "mp3")),
+        ) as m:
+            await merge_audio_files(input_paths=[f1, f2], gap_ms=500)
+        assert m.await_args.kwargs["gap_ms"] == 500
+        assert m.await_args.kwargs["crossfade_ms"] == 0
+
+    async def test_crossfade_passed_through_to_merge(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SUPERTONE_OUTPUT_DIR", str(tmp_path / "out"))
+        f1 = _make_audio_file(tmp_path, "a.mp3")
+        f2 = _make_audio_file(tmp_path, "b.mp3")
+        with patch(
+            "supertone_mcp.tools.merge_audio",
+            new=AsyncMock(return_value=(b"MERGED", "mp3")),
+        ) as m:
+            await merge_audio_files(input_paths=[f1, f2], crossfade_ms=200)
+        assert m.await_args.kwargs["crossfade_ms"] == 200
+        assert m.await_args.kwargs["gap_ms"] == 0
+
+    async def test_ffmpeg_failure_returns_error_string(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SUPERTONE_OUTPUT_DIR", str(tmp_path / "out"))
+        f1 = _make_audio_file(tmp_path, "a.mp3")
+        f2 = _make_audio_file(tmp_path, "b.mp3")
+        with patch(
+            "supertone_mcp.tools.merge_audio",
+            new=AsyncMock(side_effect=RuntimeError("bad codec xyz")),
+        ):
+            result = await merge_audio_files(input_paths=[f1, f2])
+        assert result.startswith("Audio merge failed:")
+        assert "bad codec xyz" in result
