@@ -5035,3 +5035,36 @@ class TestMergeAudioFilesHandler:
             result = await merge_audio_files(input_paths=[f1, f2])
         assert result.startswith("Audio merge failed:")
         assert "bad codec xyz" in result
+
+
+class TestMergeAudioFilesReviewFixes:
+    """Findings from PR #49 review: negative-value validation (H2) and the
+    UX-spec success message wording (M2)."""
+
+    async def test_negative_gap_returns_error(self, tmp_path):
+        f1 = _make_audio_file(tmp_path, "a.mp3")
+        f2 = _make_audio_file(tmp_path, "b.mp3")
+        with patch("supertone_mcp.tools.merge_audio", new=AsyncMock()) as m:
+            result = await merge_audio_files(input_paths=[f1, f2], gap_ms=-1)
+        assert result == "gap_ms and crossfade_ms must be non-negative."
+        m.assert_not_called()
+
+    async def test_negative_crossfade_returns_error(self, tmp_path):
+        f1 = _make_audio_file(tmp_path, "a.mp3")
+        f2 = _make_audio_file(tmp_path, "b.mp3")
+        with patch("supertone_mcp.tools.merge_audio", new=AsyncMock()) as m:
+            result = await merge_audio_files(input_paths=[f1, f2], crossfade_ms=-5)
+        assert result == "gap_ms and crossfade_ms must be non-negative."
+        m.assert_not_called()
+
+    async def test_success_message_matches_ux_spec(self, tmp_path, monkeypatch):
+        """UX spec §4.16: the success line is 'Merged audio saved: {path}'."""
+        monkeypatch.setenv("SUPERTONE_OUTPUT_DIR", str(tmp_path / "out"))
+        f1 = _make_audio_file(tmp_path, "a.mp3")
+        f2 = _make_audio_file(tmp_path, "b.mp3")
+        with patch(
+            "supertone_mcp.tools.merge_audio",
+            new=AsyncMock(return_value=(b"MERGED", "mp3")),
+        ):
+            result = await merge_audio_files(input_paths=[f1, f2])
+        assert result.startswith("Merged audio saved: ")

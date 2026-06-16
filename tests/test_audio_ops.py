@@ -6,6 +6,7 @@ real binary is ever resolved or executed (per docs/test_plan.md Flow 13 — no
 real ffmpeg/process in CI).
 """
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -130,3 +131,86 @@ class TestMergeAudio:
             )
         cmd = " ".join(cp.call_args.args)
         assert "concat=n=3" in cmd
+
+
+class TestMergeAudioNormalization:
+    """C1/C2: streams + silence are normalized so concat works on
+    heterogeneous inputs (different sample rate / channel layout / format)."""
+
+    async def test_inputs_are_normalized_before_concat(self):
+        proc = _FakeProc(stdout=b"X", returncode=0)
+        get_exe, create_proc = _patch_ffmpeg(proc)
+        with get_exe, create_proc as cp:
+            await merge_audio(
+                ["a.mp3", "b.wav"], gap_ms=0, crossfade_ms=0, output_format="mp3"
+            )
+        cmd = " ".join(cp.call_args.args)
+        # Every raw input stream is run through aresample + aformat.
+        assert "aresample=44100" in cmd
+        assert "aformat=sample_fmts=fltp" in cmd
+        assert "channel_layouts=stereo" in cmd
+
+    async def test_gap_silence_matches_target_params(self):
+        """The aevalsrc silence must carry the same sample rate + channel
+        layout as the normalized inputs, or concat fails at runtime."""
+        proc = _FakeProc(stdout=b"X", returncode=0)
+        get_exe, create_proc = _patch_ffmpeg(proc)
+        with get_exe, create_proc as cp:
+            await merge_audio(
+                ["a.mp3", "b.mp3"], gap_ms=500, crossfade_ms=0, output_format="mp3"
+            )
+        cmd = " ".join(cp.call_args.args)
+        assert "aevalsrc=0:d=0.5:s=44100:c=stereo" in cmd
+
+    async def test_crossfade_inputs_are_normalized(self):
+        proc = _FakeProc(stdout=b"X", returncode=0)
+        get_exe, create_proc = _patch_ffmpeg(proc)
+        with get_exe, create_proc as cp:
+            await merge_audio(
+                ["a.mp3", "b.mp3"], gap_ms=0, crossfade_ms=200, output_format="mp3"
+            )
+        cmd = " ".join(cp.call_args.args)
+        assert "aresample=44100" in cmd
+        assert "acrossfade=d=0.2" in cmd
+
+    async def test_timeout_kills_process_and_raises(self):
+        """H1: a hung ffmpeg is killed and surfaced as a clear error."""
+
+        class _HangingProc:
+            def __init__(self):
+                self.returncode = None
+                self.killed = False
+
+            async def communicate(self):
+                raise asyncio.TimeoutError
+
+            def kill(self):
+                self.killed = True
+
+            async def wait(self):
+                return 0
+
+        proc = _HangingProc()
+        get_exe = patch(
+            "supertone_mcp.audio_ops.imageio_ffmpeg.get_ffmpeg_exe",
+            return_value=FAKE_FFMPEG,
+        )
+        create_proc = patch(
+            "asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)
+        )
+        with get_exe, create_proc:
+            with pytest.raises(RuntimeError, match="timed out"):
+                await merge_audio(
+                    ["a.mp3", "b.mp3"], gap_ms=0, crossfade_ms=0, output_format="mp3"
+                )
+        assert proc.killed is True
+
+    async def test_empty_stderr_falls_back_to_exit_code(self):
+        """M1: nonzero exit with empty stderr surfaces the exit code, not ''."""
+        proc = _FakeProc(stdout=b"", stderr=b"", returncode=1)
+        get_exe, create_proc = _patch_ffmpeg(proc)
+        with get_exe, create_proc:
+            with pytest.raises(RuntimeError, match="exited with code 1"):
+                await merge_audio(
+                    ["a.mp3", "b.mp3"], gap_ms=0, crossfade_ms=0, output_format="mp3"
+                )

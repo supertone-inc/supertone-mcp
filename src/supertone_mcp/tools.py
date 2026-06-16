@@ -1573,15 +1573,21 @@ async def merge_audio_files(
     if not input_paths:
         return "Input file list must not be empty."
 
-    # 2. gap_ms and crossfade_ms are mutually exclusive.
+    # 2. gap_ms / crossfade_ms must be non-negative. A negative value would
+    # otherwise silently fall through to plain concat (the > 0 mode guards),
+    # dropping the user's requested gap/crossfade with a success message.
+    if gap_ms < 0 or crossfade_ms < 0:
+        return "gap_ms and crossfade_ms must be non-negative."
+
+    # 3. gap_ms and crossfade_ms are mutually exclusive.
     if gap_ms > 0 and crossfade_ms > 0:
         return "gap_ms and crossfade_ms are mutually exclusive. Set one to 0."
 
-    # 3. Output format enum — only when explicitly provided.
+    # 4. Output format enum — only when explicitly provided.
     if output_format is not None and output_format not in SUPPORTED_FORMATS:
         return f'Invalid output format: "{output_format}". Supported formats: mp3, wav.'
 
-    # 4. Per-file existence + extension checks (before any ffmpeg invocation).
+    # 5. Per-file existence + extension checks (before any ffmpeg invocation).
     resolved_paths: list[str] = []
     for raw in input_paths:
         p = Path(raw).expanduser()
@@ -1592,11 +1598,11 @@ async def merge_audio_files(
             return f'Unsupported format: "{ext}". Supported: mp3, wav.'
         resolved_paths.append(str(p))
 
-    # 5. Single-file passthrough — nothing to merge, no ffmpeg.
+    # 6. Single-file passthrough — nothing to merge, no ffmpeg.
     if len(resolved_paths) == 1:
         return f"Audio file returned as-is (single input): {resolved_paths[0]}"
 
-    # 6. Resolve output format + output directory.
+    # 7. Resolve output format + output directory.
     resolved_format = _resolve_merge_output_format(resolved_paths, output_format)
     try:
         output_dir = resolve_output_dir()
@@ -1604,7 +1610,7 @@ async def merge_audio_files(
     except ValueError as e:
         return str(e)
 
-    # 7. Merge via ffmpeg (mocked in tests).
+    # 8. Merge via ffmpeg (mocked in tests).
     try:
         audio_bytes, ext = await merge_audio(
             input_paths=resolved_paths,
@@ -1631,7 +1637,7 @@ async def merge_audio_files(
 
     duration = calculate_duration(str(output_path))
     return (
-        f"Audio merged: {output_path}\n"
+        f"Merged audio saved: {output_path}\n"
         f"Duration: {duration} seconds\n"
         f"Inputs: {len(resolved_paths)}\n"
         f"Format: {ext}"
