@@ -1,11 +1,11 @@
-"""Version consistency checks (ISSUE-028, v0.2.0 release)."""
+"""Version consistency checks (ISSUE-029, v0.3.0 release)."""
 
 import tomllib
 from pathlib import Path
 
 import supertone_mcp
 
-EXPECTED_VERSION = "0.2.0"
+EXPECTED_VERSION = "0.3.0"
 _ROOT = Path(__file__).resolve().parent.parent
 
 

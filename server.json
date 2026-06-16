@@ -3,7 +3,7 @@
   "name": "io.github.supertone-inc/supertone-mcp",
   "title": "Supertone TTS",
   "description": "Composable Supertone TTS toolkit: synthesis, voice search/preview/clone, usage — 31 languages",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "repository": {
     "url": "https://github.com/supertone-inc/supertone-mcp",
     "source": "github"
@@ -12,7 +12,7 @@
     {
       "registryType": "pypi",
       "identifier": "supertone-mcp",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "transport": {
         "type": "stdio"
       },

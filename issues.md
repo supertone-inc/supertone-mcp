@@ -35,9 +35,9 @@
 | ISSUE-024 | Relax 300-char hard limit → delegate to SDK auto-chunk | P2 | 0.5d | ISSUE-022 | done |
 | ISSUE-025 | Expose include_phonemes + normalized_text TTS params | P2 | 0.5d | ISSUE-022 | done |
 | ISSUE-026 | New tool get_custom_voice | P2 | 0.5d | ISSUE-021 | done |
-| ISSUE-027 | New usage tools get_usage_history + get_voice_usage | P2 | 1d | ISSUE-021 | backlog |
+| ISSUE-027 | New usage tools get_usage_history + get_voice_usage | P2 | 1d | ISSUE-021 | done |
 | ISSUE-028 | Docs/README reframe + env→param migration + 0.2.0 release | P2 | 1d | ISSUE-021..ISSUE-027 | done |
-| ISSUE-029 | Add merge_audio_files tool (ffmpeg-backed audio concatenation) | P2 | 1.5d | - |
+| ISSUE-029 | Add merge_audio_files tool (ffmpeg-backed audio concatenation) | P2 | 1.5d | - | done |
 
 ---
 
@@ -1411,13 +1411,14 @@ Revert README/server.json/version changes; if a broken 0.3.0 is published, yank 
 - PRD-Ref: US-018, FR-023, NFR-010
 - Priority: P2
 - Estimate: 1.5d
-- Status: open
+- Status: done
 - Owner: -
 - Branch: issue/ISSUE-029-merge-audio-files
-- GH-Issue: -
-- PR: -
+- GH-Issue: https://github.com/supertone-inc/supertone-mcp/issues/48
+- PR: https://github.com/supertone-inc/supertone-mcp/pull/49
 - Depends-On: -
-- Spec-Required: false
+- Spec-Required: true
+- Spec: docs/specs/SPEC-029.md
 
 #### Goal
 Add a `merge_audio_files` MCP tool backed by a bundled ffmpeg binary that concatenates two or more audio files produced by `text_to_speech` calls into a single deliverable, supporting head-to-tail concat, silence-gap insertion, and crossfade blending.

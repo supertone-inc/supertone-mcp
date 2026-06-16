@@ -1,10 +1,16 @@
 # Project Status: Supertone MCP Server
 
-> Last updated: 2026-06-05
+> Last updated: 2026-06-16
 
 ## Current Milestone
 
-**0.2.0 — Composable SDK toolkit (shipped to `main`, releasing via `v0.2.0` tag).**
+**0.3.0 — Audio assembly (releasing via `v0.3.0` tag).**
+Adds the `merge_audio_files` tool (ffmpeg-backed concat / gap / crossfade, bundled via
+`imageio-ffmpeg`) on top of the 0.2.0 composable toolkit. ISSUE-029 shipped (PR #49).
+Tag `v0.3.0` triggers CI `publish` (PyPI, trusted publishing) + `publish-registry`
+(MCP Registry, server.json auto-synced to the tag).
+
+**0.2.0 — Composable SDK toolkit (released; tag `v0.2.0`, on PyPI).**
 The server is reframed from "TTS the LLM's output" to a composable toolkit the LLM
 assembles: synthesis with per-call control (`output_mode`/`autoplay`/`streaming`/`model`),
 voice discovery & preview, duration/credit prediction, usage tracking, and full
@@ -72,12 +78,12 @@ custom-voice CRUD — across 31 languages and 7 models.
 | Metric | Count |
 |--------|-------|
 | v0.4 batch (ISSUE-029) | 1 |
-| Done | 0 |
+| Done | 1 |
 | In progress | 0 |
-| Remaining | 1 |
+| Remaining | 0 |
 
-### v0.4 Backlog
+### v0.4 Issues
 
-| Issue | Title | Status |
-|-------|-------|--------|
-| ISSUE-029 | Add merge_audio_files tool (ffmpeg-backed audio concatenation) | open |
+| Issue | Title | Status | PR |
+|-------|-------|--------|----|
+| ISSUE-029 | Add merge_audio_files tool (ffmpeg-backed audio concatenation) | done | #49 |

@@ -179,3 +179,35 @@
   ISSUE-017 (`preview_voice`), ISSUE-019 (`edit_custom_voice`,
   `delete_custom_voice`). Logged as Discovered Issue in
   `docs/sprint_state.md`.
+
+---
+
+## [RL-007] Pair every mocked external-binary wrapper with a real-binary integration check
+
+- **Category:** Testing / Architecture
+- **Pattern:** When a module shells out to an external binary (ffmpeg, etc.)
+  and the tests mock `asyncio.create_subprocess_exec`, the mock validates the
+  COMMAND STRING but never the binary's actual behavior. Filter-graph /
+  parameter-compatibility bugs (e.g., ffmpeg `concat` requires every segment to
+  share sample rate, channel layout, and sample format) pass CI green and fail
+  only at runtime on real, heterogeneous inputs. This is a sibling of RL-006
+  (mock returns whatever you tell it) specific to subprocess/filter pipelines.
+- **Why it matters:** The mocked suite "verifies" the headline use case
+  (merging mixed mp3+wav TTS clips) while the feature is actually broken on that
+  exact input. Discovered only because a manual real-ffmpeg run was done during
+  review — not by any committed test.
+- **Fix:** (1) Normalize stream parameters explicitly before any multi-stream
+  filter (`aresample`/`aformat` per input; matched `aevalsrc` params for
+  generated silence). (2) Add at least one opt-in / CI-skipped integration test
+  that runs the real binary against heterogeneous fixtures, so the parameter-
+  compatibility contract is pinned somewhere.
+- **Prevention point:** Implementation phase — when wrapping a binary whose
+  filter/codec layer has parameter-matching rules, write the normalization in
+  from the start and add a real-binary smoke test alongside the mocked unit
+  tests.
+- **Frequency:** 1
+- **Observed-In:** PR #49 (ISSUE-029), `src/supertone_mcp/audio_ops.py`
+  `_build_filter_complex` — raw `[i:a]` streams + default-param `aevalsrc` fed
+  into `concat`/`acrossfade` with no normalization; concat would error on
+  mismatched parameters. Fixed in the same PR (normalization added) + manual
+  real-ffmpeg validation across concat/gap/crossfade.

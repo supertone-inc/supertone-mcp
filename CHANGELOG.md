@@ -3,7 +3,24 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
-## [0.2.0] — unreleased (merged to main; pending `v0.2.0` tag)
+## [0.3.0] — 2026-06-16
+
+Audio-assembly milestone (v0.4 in planning docs): the toolkit can now stitch its own
+`text_to_speech` outputs into a single deliverable without leaving the agent.
+
+### Added
+- **`merge_audio_files` tool** — concatenate two or more local audio files (mp3/wav) into
+  one via a **bundled ffmpeg** (`imageio-ffmpeg`; no system ffmpeg required, NFR-001).
+  Supports plain concat, silence-gap insertion (`gap_ms`), and crossfade blending
+  (`crossfade_ms`, mutually exclusive with `gap_ms`). Output format auto-detected
+  (all-same-ext → that ext; mixed → mp3) or forced via `output_format`. A single input
+  is returned as-is. Input streams are normalized (sample rate / channel layout / format)
+  before merging so heterogeneous clips combine correctly. Design: `docs/specs/SPEC-029.md`.
+
+### Dependencies
+- Added `imageio-ffmpeg>=0.5,<1.0` (bundles the ffmpeg binary).
+
+## [0.2.0] — released (tag `v0.2.0`, on PyPI)
 
 This release reframes the server as a **composable SDK toolkit** — the LLM assembles
 discrete tools rather than issuing a single "speak this" command — and moves behavior

@@ -281,6 +281,11 @@
 | TC-151 | ffmpeg exits nonzero (mocked) | `merge_audio_files(input_paths=[p1, p2])` | Error: `Audio merge failed: {stderr_excerpt}.` | Unit | CI |
 | TC-152 | `imageio_ffmpeg` mocked | `merge_audio_files(...)` | `imageio_ffmpeg.get_ffmpeg_exe()` is called to resolve the ffmpeg binary (no system ffmpeg relied upon). | Unit | CI |
 | TC-153 | None | `merge_audio_files(input_paths=[p1, p2], output_format="ogg")` | Error: `Invalid output format: "ogg". Supported formats: mp3, wav.`; no ffmpeg invoked. | Unit | CI |
+| TC-154 | None | `merge_audio_files(input_paths=[p1, p2], gap_ms=-1)` | Error: `gap_ms and crossfade_ms must be non-negative.`; no ffmpeg invoked. (PR #49 review H2) | Unit | CI |
+| TC-155 | None | `merge_audio_files(input_paths=[p1, p2], crossfade_ms=-5)` | Error: `gap_ms and crossfade_ms must be non-negative.`; no ffmpeg. | Unit | CI |
+| TC-156 | Heterogeneous inputs (44100/stereo mp3 + 24000/mono wav) | `merge_audio([a, b], ...)` for concat/gap/crossfade | ffmpeg command normalizes every stream (`aresample`/`aformat`) and matches silence params; merge succeeds (validated against real ffmpeg, not just mock). (PR #49 review C1/C2, RL-007) | Integration (manual/opt-in) | local |
+| TC-157 | ffmpeg hangs (mocked TimeoutError) | `merge_audio(...)` | Process is killed and `RuntimeError("ffmpeg timed out ...")` raised. (PR #49 review H1) | Unit | CI |
+| TC-158 | ffmpeg nonzero exit, empty stderr (mocked) | `merge_audio(...)` | `RuntimeError("ffmpeg exited with code N")` (no bare empty message). (PR #49 review M1) | Unit | CI |
 
 ---
 

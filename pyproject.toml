@@ -1,6 +1,6 @@
 [project]
 name = "supertone-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "MCP server for the Supertone TTS API — a composable toolkit of voice synthesis, discovery, cloning, and usage tools across 31 languages"
 readme = "README.md"
 license = { text = "MIT" }
