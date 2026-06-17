@@ -3,6 +3,26 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
+## [0.3.1] — 2026-06-17
+
+Bug-fix release for `merge_audio_files` (reported against 0.3.0).
+
+### Fixed
+- **WAV merge `Duration` mis-reported (ISSUE-032).** ffmpeg rendered to a non-seekable
+  `pipe:1`, so it could not patch the WAV RIFF/`data` chunk size headers and wrote the
+  `0xFFFFFFFF` placeholder — read back as ~24347s (and the on-disk `.wav` header was itself
+  corrupt). The merge now renders to a seekable temp file and reads the bytes back, so the
+  header is finalized and the reported duration is correct. MP3 output was unaffected.
+- **`crossfade_ms` intermittently truncated short clips (ISSUE-033).** ffmpeg's `acrossfade`
+  filter is non-deterministic on short / similar-length inputs, occasionally dropping a whole
+  stream (e.g. `1.36s + 1.36s, cf=500` → 0.86s instead of 2.22s on some runs). Replaced it with
+  a deterministic manual crossfade (`afade` in/out + `adelay` offset + `amix=normalize=0`),
+  fed each input's duration. Concat and `gap_ms` modes were already correct.
+
+### Tests
+- Added env-gated real-ffmpeg regression tests (`SUPERTONE_RUN_FFMPEG_TESTS=1`, skipped in
+  default CI) pinning true WAV duration and crossfade determinism (10× repeat + 3-input chain).
+
 ## [0.3.0] — 2026-06-16
 
 Audio-assembly milestone (v0.4 in planning docs): the toolkit can now stitch its own

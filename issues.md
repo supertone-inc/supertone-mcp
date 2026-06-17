@@ -40,8 +40,8 @@
 | ISSUE-029 | Add merge_audio_files tool (ffmpeg-backed audio concatenation) | P2 | 1.5d | - | done |
 | ISSUE-030 | Real-ffmpeg integration test tier for merge_audio_files | P3 | 0.5d | ISSUE-029 | backlog |
 | ISSUE-031 | Harden _pipe_format to reject unknown output formats | P3 | 0.5d | ISSUE-029 | backlog |
-| ISSUE-032 | Fix WAV duration mis-report (pipe:1 corrupts RIFF size header) | P2 | 0.5d | ISSUE-029 | doing |
-| ISSUE-033 | Fix crossfade_ms truncation on short clips (replace acrossfade) | P2 | 1d | ISSUE-029 | doing |
+| ISSUE-032 | Fix WAV duration mis-report (pipe:1 corrupts RIFF size header) | P2 | 0.5d | ISSUE-029 | done |
+| ISSUE-033 | Fix crossfade_ms truncation on short clips (replace acrossfade) | P2 | 1d | ISSUE-029 | done |
 
 ---
 
@@ -1540,7 +1540,7 @@ Non-blocking defensive follow-up from PR #49 (ISSUE-029); review finding L1. `ME
 - PRD-Ref: FR-023
 - Priority: P2
 - Estimate: 0.5d
-- Status: doing
+- Status: done
 - Owner: pillip
 - Branch: issue/ISSUE-032-033-merge-audio-fixes
 - GH-Issue: https://github.com/supertone-inc/supertone-mcp/issues/52
@@ -1570,7 +1570,7 @@ Root cause: `audio_ops.merge_audio` writes to `pipe:1` (non-seekable); ffmpeg ca
 - PRD-Ref: FR-023
 - Priority: P2
 - Estimate: 1d
-- Status: doing
+- Status: done
 - Owner: pillip
 - Branch: issue/ISSUE-032-033-merge-audio-fixes
 - GH-Issue: https://github.com/supertone-inc/supertone-mcp/issues/53

@@ -1,14 +1,19 @@
 # Project Status: Supertone MCP Server
 
-> Last updated: 2026-06-16
+> Last updated: 2026-06-17
 
 ## Current Milestone
 
-**0.3.0 — Audio assembly (releasing via `v0.3.0` tag).**
+**0.3.1 — `merge_audio_files` bug-fix (releasing via `v0.3.1` tag).**
+Fixes the WAV duration mis-report (ISSUE-032; `pipe:1` corrupted the RIFF size header) and the
+non-deterministic `crossfade_ms` truncation on short clips (ISSUE-033; replaced the flaky
+`acrossfade` filter with a manual `afade`+`adelay`+`amix` crossfade). Shipped via PR #54.
+Tag `v0.3.1` triggers CI `publish` (PyPI, trusted publishing) + `publish-registry`
+(MCP Registry, server.json auto-synced to the tag).
+
+**0.3.0 — Audio assembly (released; tag `v0.3.0`).**
 Adds the `merge_audio_files` tool (ffmpeg-backed concat / gap / crossfade, bundled via
 `imageio-ffmpeg`) on top of the 0.2.0 composable toolkit. ISSUE-029 shipped (PR #49).
-Tag `v0.3.0` triggers CI `publish` (PyPI, trusted publishing) + `publish-registry`
-(MCP Registry, server.json auto-synced to the tag).
 
 **0.2.0 — Composable SDK toolkit (released; tag `v0.2.0`, on PyPI).**
 The server is reframed from "TTS the LLM's output" to a composable toolkit the LLM
