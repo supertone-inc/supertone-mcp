@@ -1610,13 +1610,19 @@ async def merge_audio_files(
     except ValueError as e:
         return str(e)
 
-    # 8. Merge via ffmpeg (mocked in tests).
+    # 8. Merge via ffmpeg (mocked in tests). Crossfade lays clips on a shared
+    # timeline by offset, so it needs each input's duration up front (mutagen
+    # handles both wav and mp3); concat/gap modes don't.
+    input_durations = (
+        [calculate_duration(p) for p in resolved_paths] if crossfade_ms > 0 else None
+    )
     try:
         audio_bytes, ext = await merge_audio(
             input_paths=resolved_paths,
             gap_ms=gap_ms,
             crossfade_ms=crossfade_ms,
             output_format=resolved_format,
+            input_durations=input_durations,
         )
     except RuntimeError as e:
         return f"Audio merge failed: {e}."

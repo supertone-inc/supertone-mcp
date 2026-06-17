@@ -276,7 +276,8 @@
 | TC-146 | Mixed .mp3 + .wav inputs | `merge_audio_files(input_paths=[mp3, wav])` | Auto-format resolves to mp3; merged file has `.mp3` extension. | Integration | CI |
 | TC-147 | Mixed .mp3 + .wav, explicit override | `merge_audio_files(input_paths=[mp3, wav], output_format="wav")` | Output uses `.wav`. | Integration | CI |
 | TC-148 | None | `merge_audio_files(input_paths=[p1, p2], gap_ms=500)` | ffmpeg invoked with silence gap of 500ms between clips. | Unit | CI |
-| TC-149 | None | `merge_audio_files(input_paths=[p1, p2], crossfade_ms=200)` | ffmpeg invoked with 200ms crossfade filter. | Unit | CI |
+| TC-149 | None | `merge_audio_files(input_paths=[p1, p2], crossfade_ms=200)` | ffmpeg invoked with a deterministic 200ms crossfade (`afade`+`adelay`+`amix`, not `acrossfade` — ISSUE-033). | Unit | CI |
+| TC-156 | Two short ~1.36s clips, real ffmpeg | `merge_audio_files(..., crossfade_ms=500)` repeated ≥10× | Every result is the correct length (~2.22s), no intermittent truncation; merged WAV reports its true duration (ISSUE-032/033). | Integration | gated (`SUPERTONE_RUN_FFMPEG_TESTS=1`) |
 | TC-150 | None | `merge_audio_files(input_paths=[p1, p2], gap_ms=500, crossfade_ms=200)` | Error: `gap_ms and crossfade_ms are mutually exclusive. Set one to 0.`; no ffmpeg invoked. | Unit | CI |
 | TC-151 | ffmpeg exits nonzero (mocked) | `merge_audio_files(input_paths=[p1, p2])` | Error: `Audio merge failed: {stderr_excerpt}.` | Unit | CI |
 | TC-152 | `imageio_ffmpeg` mocked | `merge_audio_files(...)` | `imageio_ffmpeg.get_ffmpeg_exe()` is called to resolve the ffmpeg binary (no system ffmpeg relied upon). | Unit | CI |

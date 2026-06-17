@@ -40,6 +40,8 @@
 | ISSUE-029 | Add merge_audio_files tool (ffmpeg-backed audio concatenation) | P2 | 1.5d | - | done |
 | ISSUE-030 | Real-ffmpeg integration test tier for merge_audio_files | P3 | 0.5d | ISSUE-029 | backlog |
 | ISSUE-031 | Harden _pipe_format to reject unknown output formats | P3 | 0.5d | ISSUE-029 | backlog |
+| ISSUE-032 | Fix WAV duration mis-report (pipe:1 corrupts RIFF size header) | P2 | 0.5d | ISSUE-029 | doing |
+| ISSUE-033 | Fix crossfade_ms truncation on short clips (replace acrossfade) | P2 | 1d | ISSUE-029 | doing |
 
 ---
 
@@ -1530,6 +1532,66 @@ Make `audio_ops._pipe_format` fail loudly on an unknown output format instead of
 
 #### Notes
 Non-blocking defensive follow-up from PR #49 (ISSUE-029); review finding L1. `MERGE_SUPPORTED_EXTENSIONS` exists so the merge surface can diverge later — this guards that path.
+
+---
+
+### ISSUE-032: Fix WAV duration mis-report (pipe:1 corrupts RIFF size header)
+- Track: product
+- PRD-Ref: FR-023
+- Priority: P2
+- Estimate: 0.5d
+- Status: doing
+- Owner: pillip
+- Branch: issue/ISSUE-032-033-merge-audio-fixes
+- GH-Issue: https://github.com/supertone-inc/supertone-mcp/issues/52
+- PR:
+- Depends-On: ISSUE-029
+- Spec-Required: false
+
+#### Goal
+Make `merge_audio_files` report the correct `Duration` for WAV output, and write a structurally valid WAV file to disk.
+
+#### Scope (In/Out)
+- In: render ffmpeg WAV output to a seekable destination (temp file) so the RIFF/`data` chunk size fields are patched, then return the bytes; covers both the reported duration and the on-disk file. Add a regression test asserting a merged WAV's parsed duration is within tolerance of the input sum.
+- Out: changing the MP3 output path (already correct); changing the duration library (mutagen).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given short WAV inputs summing to ~5s, when merged to WAV, then reported `Duration` is within ±0.2s of the true sum (not 24347.9s).
+- [ ] Given a merged WAV on disk, when parsed by Python `wave`/mutagen, then the `data` chunk size is the real byte count (not `0xFFFFFFFF`).
+- [ ] Given MP3 inputs, when merged to MP3, then the merge behavior and response are unchanged.
+
+#### Notes
+Root cause: `audio_ops.merge_audio` writes to `pipe:1` (non-seekable); ffmpeg cannot rewind to patch WAV size headers and emits the `0xFFFFFFFF` placeholder, which mutagen reads as `4294967295 / (44100·2·2) ≈ 24347.887s`. CoreAudio (`afinfo`) ignored the field, masking the corruption. From v0.3.0 bug report.
+
+---
+
+### ISSUE-033: Fix crossfade_ms truncation on short clips (replace acrossfade)
+- Track: product
+- PRD-Ref: FR-023
+- Priority: P2
+- Estimate: 1d
+- Status: doing
+- Owner: pillip
+- Branch: issue/ISSUE-032-033-merge-audio-fixes
+- GH-Issue: https://github.com/supertone-inc/supertone-mcp/issues/53
+- PR:
+- Depends-On: ISSUE-029
+- Spec-Required: false
+
+#### Goal
+Make `crossfade_ms` produce deterministic, correct-length output for short and similar-length clips (no intermittent truncation).
+
+#### Scope (In/Out)
+- In: replace the `acrossfade` chain in `_build_filter_complex` with a deterministic manual crossfade (`afade` in/out + `adelay` cumulative offset + `amix=normalize=0`); thread each input's duration (via existing `calculate_duration`, wav+mp3) into `merge_audio`. Add a regression test over short/asymmetric/3-input crossfade cases asserting exact expected length, repeated to catch the prior flakiness.
+- Out: concat and gap_ms paths (already correct); perceptual/curve-shape changes beyond matching acrossfade's default linear blend.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given `1.36s + 1.36s, cf=500`, when merged repeatedly (≥10×), then every result is ~2.22s (no 0.86s truncation).
+- [ ] Given long clips (e.g. `4.72s + 4.56s`, cf 300/500/1000), when merged, then `out ≈ dA + dB − crossfade` is preserved.
+- [ ] Given a 3-input crossfade chain, when merged, then total length matches `Σdur − (n−1)·crossfade`.
+
+#### Notes
+Root cause: intrinsic ffmpeg `acrossfade` bug on short inputs — reproduces on raw inputs with no `aresample`, dropping one stream non-deterministically (results vary: 0.86 / 0.707 / 0.429 / 0.207s). Manual `afade`+`adelay`+`amix` construction verified deterministic 12/12 across all cases. From v0.3.0 bug report.
 
 ---
 ## Dependency Graph
