@@ -1544,7 +1544,7 @@ Non-blocking defensive follow-up from PR #49 (ISSUE-029); review finding L1. `ME
 - Owner: pillip
 - Branch: issue/ISSUE-032-033-merge-audio-fixes
 - GH-Issue: https://github.com/supertone-inc/supertone-mcp/issues/52
-- PR:
+- PR: https://github.com/supertone-inc/supertone-mcp/pull/54
 - Depends-On: ISSUE-029
 - Spec-Required: false
 
@@ -1574,7 +1574,7 @@ Root cause: `audio_ops.merge_audio` writes to `pipe:1` (non-seekable); ffmpeg ca
 - Owner: pillip
 - Branch: issue/ISSUE-032-033-merge-audio-fixes
 - GH-Issue: https://github.com/supertone-inc/supertone-mcp/issues/53
-- PR:
+- PR: https://github.com/supertone-inc/supertone-mcp/pull/54
 - Depends-On: ISSUE-029
 - Spec-Required: false
 
