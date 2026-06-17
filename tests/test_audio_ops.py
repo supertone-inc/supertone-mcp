@@ -10,6 +10,7 @@ import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
 from supertone_mcp.audio_ops import merge_audio
 
 FAKE_FFMPEG = "/fake/bin/ffmpeg"
@@ -27,6 +28,26 @@ class _FakeProc:
         return self._stdout, self._stderr
 
 
+def _writing_create(proc):
+    """Side-effect for the create_subprocess_exec mock.
+
+    Real ffmpeg now renders to the seekable output file (the last positional
+    arg), not stdout, so the fake must do the same: write the proc's stdout
+    bytes to that path. `merge_audio` then reads them back.
+    """
+
+    def _side(*args, **kwargs):
+        out_path = args[-1]
+        try:
+            with open(out_path, "wb") as fh:
+                fh.write(getattr(proc, "_stdout", b"") or b"")
+        except OSError:
+            pass
+        return proc
+
+    return _side
+
+
 def _patch_ffmpeg(proc: _FakeProc):
     """Return (get_exe_mock, create_proc_mock) context managers as a tuple."""
     get_exe = patch(
@@ -35,7 +56,7 @@ def _patch_ffmpeg(proc: _FakeProc):
     )
     create_proc = patch(
         "asyncio.create_subprocess_exec",
-        new=AsyncMock(return_value=proc),
+        new=AsyncMock(side_effect=_writing_create(proc)),
     )
     return get_exe, create_proc
 
@@ -82,18 +103,35 @@ class TestMergeAudio:
         # 500ms -> 0.5s
         assert "0.5" in cmd
 
-    async def test_crossfade_uses_acrossfade(self):
-        """TC-149: crossfade_ms>0 → the acrossfade filter is used."""
+    async def test_crossfade_uses_manual_fade_mix(self):
+        """TC-149 (ISSUE-033): crossfade_ms>0 → a deterministic manual crossfade
+        (afade + adelay + amix), NOT the flaky acrossfade filter."""
         proc = _FakeProc(stdout=b"X", returncode=0)
         get_exe, create_proc = _patch_ffmpeg(proc)
         with get_exe, create_proc as cp:
             await merge_audio(
-                ["a.mp3", "b.mp3"], gap_ms=0, crossfade_ms=200, output_format="mp3"
+                ["a.mp3", "b.mp3"],
+                gap_ms=0,
+                crossfade_ms=200,
+                output_format="mp3",
+                input_durations=[1.0, 1.0],
             )
         cmd = " ".join(cp.call_args.args)
-        assert "acrossfade" in cmd
-        # 200ms -> 0.2s
-        assert "0.2" in cmd
+        assert "acrossfade" not in cmd
+        assert "afade" in cmd
+        assert "amix=inputs=2" in cmd
+        # 200ms -> 0.2s fade duration
+        assert "d=0.2" in cmd
+
+    async def test_crossfade_requires_input_durations(self):
+        """crossfade_ms>0 without per-input durations is a programming error."""
+        proc = _FakeProc(stdout=b"X", returncode=0)
+        get_exe, create_proc = _patch_ffmpeg(proc)
+        with get_exe, create_proc:
+            with pytest.raises(ValueError, match="duration"):
+                await merge_audio(
+                    ["a.mp3", "b.mp3"], gap_ms=0, crossfade_ms=200, output_format="mp3"
+                )
 
     async def test_output_format_wav_sets_pipe_format(self):
         """output_format='wav' is reflected in the ffmpeg output args + return."""
@@ -167,11 +205,15 @@ class TestMergeAudioNormalization:
         get_exe, create_proc = _patch_ffmpeg(proc)
         with get_exe, create_proc as cp:
             await merge_audio(
-                ["a.mp3", "b.mp3"], gap_ms=0, crossfade_ms=200, output_format="mp3"
+                ["a.mp3", "b.mp3"],
+                gap_ms=0,
+                crossfade_ms=200,
+                output_format="mp3",
+                input_durations=[1.0, 1.0],
             )
         cmd = " ".join(cp.call_args.args)
         assert "aresample=44100" in cmd
-        assert "acrossfade=d=0.2" in cmd
+        assert "afade" in cmd
 
     async def test_timeout_kills_process_and_raises(self):
         """H1: a hung ffmpeg is killed and surfaced as a clear error."""
@@ -196,7 +238,8 @@ class TestMergeAudioNormalization:
             return_value=FAKE_FFMPEG,
         )
         create_proc = patch(
-            "asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)
+            "asyncio.create_subprocess_exec",
+            new=AsyncMock(side_effect=_writing_create(proc)),
         )
         with get_exe, create_proc:
             with pytest.raises(RuntimeError, match="timed out"):
